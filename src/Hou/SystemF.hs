@@ -1,0 +1,245 @@
+{-# LANGUAGE FlexibleContexts      #-}
+
+{-|
+Module      : Hou.SystemF
+Description : Provides methods for type checking and type inferencing of types for terms of SystemF.
+Copyright   : (c) 2018 Łukasz Lachowski <l.lachowski@gmail.com>
+License     : MIT, see the file LICENSE
+-}
+module Hou.SystemF(
+  VarName,
+  FTermType(..),
+  Name,
+  FTerm(..),
+  inferType,
+  inferTypes,
+  toTermType
+  ) where
+
+import qualified Hou.HigherOrderUnification as H
+import           Hou.Levels
+import           Hou.MixedPrefix            as M
+import           Hou.Trace
+
+import           Control.Monad.Gen
+import           Data.FMList                as FML
+import           Data.List
+import           Data.Map
+import           Data.Maybe
+
+
+type VarName = Int
+
+{-|
+Represents type a term of SystemF.
+-}
+data FTermType =
+  VarType VarName |
+  Implication FTermType FTermType |
+  ForAll VarName FTermType
+  deriving (Show, Read, Eq)
+
+type Name = String
+
+{-|
+Represents terms of SystemF.
+-}
+data FTerm =
+  Var Name (Maybe FTermType) |
+  App FTerm FTerm |
+  TypeApp FTerm (Maybe FTermType) |
+  Abs Name (Maybe FTermType) FTerm |
+  TypeAbs (Maybe VarName) FTerm
+  deriving (Show, Read, Eq)
+
+{-|
+Class representing a set of typings of variables used by process of type inference/checking.
+-}
+class Context c where
+  lookup :: c -> Name -> Maybe H.Term
+  add :: c -> Name -> H.Term -> c
+
+newtype MapContext = MC (Map Name H.Term)
+
+createMapContext :: MapContext
+createMapContext = MC Data.Map.empty
+
+instance Context MapContext where
+  lookup (MC c) = flip Data.Map.lookup c
+  add (MC c) name term = MC $ Data.Map.insert name term c
+
+{-|
+Function returning first valid type found for a given term.
+-}
+inferType :: FTerm -> FTermType
+inferType = Data.List.head . inferTypes
+
+{-|
+If a given term is typable, it returns an infinite list of possible typings for it.
+-}
+inferTypes :: FTerm -> [FTermType]
+-- inferTypes nterm = FML.toList . iterDepth 200 . (!!>) $ do
+inferTypes = FML.toList . inferTypes'
+
+inferTypes' :: FTerm -> FML.FMList FTermType
+inferTypes' nterm = iterDepth 200 $ do
+  term <- anyOf $ termToFTerms nterm
+  solution <- inferFTerm term
+  return solution
+
+inferFTerm :: (Monoid (n r)) => FTerm -> NonDeterministicT r n FTermType
+inferFTerm t = trace ("inferFTerm: " ++ show t) $ do
+  let (fixedFormula, resultType) = prepareFormula t
+  traceM $ "inferFTerm 1: " ++ show fixedFormula
+  solution <- solveNonDeterministic fixedFormula H.createListSolution
+  traceM $ "inferFTerm 2: " ++ show resultType
+  traceM $ "inferFTerm 3: " ++ show (H.normalize $ H.apply solution resultType)
+  return $ toFTermType $ H.normalize $ H.apply solution resultType
+
+{-|
+Maps a typing problem of a term of SystemF onto a formula of higher-order unification.
+-}
+prepareFormula :: FTerm   -- ^ A term with possible type annotations.
+  -> (HouFormula, H.Term) -- ^ Typing of the term encoded as a formula of higher-order unification
+                          --   and a term that represents its type.
+prepareFormula t = runGen $ do
+  termType <- newMetaVariable
+  let resultType = H.MetaVar termType
+  let ctx = createMapContext
+  formula <- translate ctx t resultType
+  let fixedFormula = Exists termType formula
+  return (fixedFormula, resultType)
+
+newMetaVariable :: (MonadGen H.MetaVariableName m) => m H.MetaVariable
+newMetaVariable = do
+  newVar <- gen
+  return $ (newVar, H.starType)
+
+implication :: H.Term -> H.Term -> H.Term
+implication t1 t2 | H.getTermType t1 == H.starType && H.getTermType t2 == H.starType =
+  H.App
+  (H.App (H.Constant ("->", H.Implication H.starType (H.Implication H.starType H.starType))) t1 (H.Implication H.starType H.starType))
+  t2 H.starType
+
+forAll :: H.Term -> H.Term
+forAll t | H.getTermType t == (H.Implication H.starType H.starType) = H.App (H.Constant ("∀", H.Implication (H.Implication H.starType H.starType) H.starType)) t H.starType
+
+{-|
+Main function of this module. It translates a problem of typing of a term of SystemF  onto
+the problem of higher-order unification.
+-}
+translate :: (MonadGen H.MetaVariableName m, Context c) => c -> FTerm -> H.Term -> m HouFormula
+translate ctx t tType = case t of
+  (Var name termType) -> do
+    case Hou.SystemF.lookup ctx name of
+      Nothing -> fail "definition of a variable was not found in the context"
+      (Just ctxType) -> do
+        case termType of
+          (Just termTypeVal) -> return $ And (Equation tType ctxType) (Equation tType $ toTermType termTypeVal)
+          _ -> return $ Equation tType ctxType
+
+  (App t1 t2) -> do
+    v <- newMetaVariable
+    let vMetaVar = H.MetaVar v
+    t1Form <- translate ctx t1 $ implication vMetaVar tType
+    t2Form <- translate ctx t2 vMetaVar
+    return $ Exists v $ And t1Form t2Form
+
+  (Abs name termType term) -> do
+    beta <- newMetaVariable
+    let betaTerm = fromMaybe (H.MetaVar beta) $ toTermType <$> termType
+    v <- newMetaVariable
+    let vMetaVar = H.MetaVar v
+    Exists beta <$> Exists v <$>
+      And
+        (Equation tType (implication betaTerm vMetaVar)) <$>
+        translate (add ctx name betaTerm) term vMetaVar
+
+  (TypeApp term termType) -> do
+    beta <- newMetaVariable
+    let betaTerm = fromMaybe (H.MetaVar beta) $ toTermType <$> termType
+    vName <- gen
+    let v = (vName, H.Implication H.starType H.starType)
+    let vMetaVar = H.MetaVar v
+    Exists beta <$> Exists v <$>
+      And
+        (Equation tType (H.App vMetaVar betaTerm H.starType)) <$>
+        translate ctx term (forAll vMetaVar)
+
+  (TypeAbs name term) -> do
+    newVar <- gen
+    let v = (newVar, H.Implication H.starType H.starType)
+    let vMetaVar = H.MetaVar v
+    phi <- fromMaybe newMetaVariable $ (\n -> return (n, H.starType)) <$> name
+    Exists v <$>
+      And (Equation tType (forAll vMetaVar)) <$>
+      M.ForAll phi <$> translate ctx term (H.App vMetaVar (H.MetaVar phi) H.starType)
+
+termToFTerms :: FTerm -> [FTerm]
+termToFTerms = injectQuantifiers
+
+{-|
+For a given term it outputs an infinite list of terms created by injecting the ForAll and
+TypeApp annotations. Returned list is sorted by the size.
+-}
+injectQuantifiers :: FTerm -> [FTerm]
+injectQuantifiers t = t : injectQuantifiers' [t]
+
+injectQuantifiers' :: [FTerm] -> [FTerm]
+injectQuantifiers' previous =
+  let this = flip concatMap previous injectQuantifier
+  in
+  this ++ injectQuantifiers' this
+
+injectQuantifier :: FTerm -> [FTerm]
+injectQuantifier t =
+  let next = case t of
+        (App t1 t2) -> [ App t1' t2 | t1' <- injectQuantifier t1 ] ++ [ App t1 t2' | t2' <- injectQuantifier t2 ]
+        (TypeApp term tType) -> [TypeApp term' tType | term' <- injectQuantifier term]
+        (Abs name tType term) -> [Abs name tType term' | term' <- injectQuantifier term]
+        (TypeAbs tType term) -> [TypeAbs tType term' | term' <- injectQuantifier term]
+        _ -> []
+  in
+  [TypeApp t Nothing, TypeAbs Nothing t] ++ next
+
+toFTermType :: H.Term -> FTermType
+toFTermType t = trace ("toFTermType: " ++ show t) $
+  let freeVarsCount = countFreeAndMetaVars t
+  in
+  runGenFrom (freeVarsCount + 1) . toFTermType' [] $ t
+
+countFreeAndMetaVars :: H.Term -> Int
+countFreeAndMetaVars t = case t of
+  (H.MetaVar _)   -> 1
+  (H.FreeVar _)   -> 1
+  (H.App t1 t2 _) -> countFreeAndMetaVars t1 + countFreeAndMetaVars t2
+  (H.Abs _ term)  -> countFreeAndMetaVars term
+  _               -> 0
+
+toFTermType' :: (MonadGen VarName m) => [VarName] -> H.Term -> m FTermType
+toFTermType' lambdas t = case t of
+  (H.MetaVar (ix, _)) -> return $ VarType ix
+  (H.Var (ix, _)) -> return $ VarType $ lambdas !! ix
+  (H.FreeVar (ix, _)) -> return $ VarType ix
+  (H.App (H.App (H.Constant ("->", _)) a _) b _) ->
+    trace "toFTermType ->" $ Implication <$> toFTermType' lambdas a <*> toFTermType' lambdas b
+  (H.App (H.Constant ("∀", _)) term _) -> trace "toFTermType 'forall'" $ toFTermType' lambdas term
+  (H.Abs _ term) -> do
+    newBoundVariable <- gen
+    let lambdas' = newBoundVariable : lambdas
+    Hou.SystemF.ForAll newBoundVariable <$> toFTermType' lambdas' term
+  _ -> fail $ "I don't know what happend. Processed term: "  ++ show t
+
+{-|
+Translates a type of SystemF onto a simply typed lambda term.
+-}
+toTermType :: FTermType -> H.Term
+toTermType t = trace ("toTermType: " ++ show t) $ toTermType' [] t
+
+toTermType' :: [VarName] -> FTermType -> H.Term
+toTermType' bounded t = trace ("toTermType' 1: " ++ show t) $ case t of
+  (VarType name) -> case elemIndex name bounded of
+    (Just ix) -> H.Var (ix, H.starType)
+    (Nothing) -> trace ("toTermType': " ++ show name) $ H.FreeVar (name, H.starType)
+  (Implication t1 t2) -> implication (toTermType' bounded t1) (toTermType' bounded t2)
+  (Hou.SystemF.ForAll name term) -> forAll $ H.Abs H.starType $ toTermType' (name:bounded) term
