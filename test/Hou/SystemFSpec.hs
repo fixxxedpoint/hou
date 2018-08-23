@@ -72,8 +72,8 @@ spec = do
               (Abs "x" Nothing (App (TypeApp (Var "x" Nothing) Nothing) (Var "x" Nothing)))
               (
                 App
-                  (Abs "y" Nothing $ App (TypeApp (Var "y" Nothing) Nothing) (Var "y" Nothing))
-                  (TypeAbs Nothing $ Abs "z" Nothing (Var "z" Nothing))
+                  (Abs "y" Nothing (App (TypeApp (Var "y" Nothing) Nothing) (Var "y" Nothing)))
+                  (TypeAbs Nothing (Abs "z" Nothing (Var "z" Nothing)))
               )
 
       let result = inferTypes term

@@ -113,7 +113,7 @@ prepareFormula t = runGen $ do
 newMetaVariable :: (MonadGen H.MetaVariableName m) => m H.MetaVariable
 newMetaVariable = do
   newVar <- gen
-  return $ (newVar, H.starType)
+  return (newVar, H.starType)
 
 implication :: H.Term -> H.Term -> H.Term
 implication t1 t2 | H.getTermType t1 == H.starType && H.getTermType t2 == H.starType =
@@ -122,7 +122,7 @@ implication t1 t2 | H.getTermType t1 == H.starType && H.getTermType t2 == H.star
   t2 H.starType
 
 forAll :: H.Term -> H.Term
-forAll t | H.getTermType t == (H.Implication H.starType H.starType) = H.App (H.Constant ("∀", H.Implication (H.Implication H.starType H.starType) H.starType)) t H.starType
+forAll t | H.getTermType t == H.Implication H.starType H.starType = H.App (H.Constant ("∀", H.Implication (H.Implication H.starType H.starType) H.starType)) t H.starType
 
 {-|
 Main function of this module. It translates a problem of typing of a term of SystemF  onto
@@ -130,10 +130,10 @@ the problem of higher-order unification.
 -}
 translate :: (MonadGen H.MetaVariableName m, Context c) => c -> FTerm -> H.Term -> m HouFormula
 translate ctx t tType = case t of
-  (Var name termType) -> do
+  (Var name termType) ->
     case Hou.SystemF.lookup ctx name of
       Nothing -> fail "definition of a variable was not found in the context"
-      (Just ctxType) -> do
+      (Just ctxType) ->
         case termType of
           (Just termTypeVal) -> return $ And (Equation tType ctxType) (Equation tType $ toTermType termTypeVal)
           _ -> return $ Equation tType ctxType
@@ -150,7 +150,7 @@ translate ctx t tType = case t of
     let betaTerm = fromMaybe (H.MetaVar beta) $ toTermType <$> termType
     v <- newMetaVariable
     let vMetaVar = H.MetaVar v
-    Exists beta <$> Exists v <$>
+    Exists beta . Exists v .
       And
         (Equation tType (implication betaTerm vMetaVar)) <$>
         translate (add ctx name betaTerm) term vMetaVar
@@ -161,7 +161,7 @@ translate ctx t tType = case t of
     vName <- gen
     let v = (vName, H.Implication H.starType H.starType)
     let vMetaVar = H.MetaVar v
-    Exists beta <$> Exists v <$>
+    Exists beta . Exists v .
       And
         (Equation tType (H.App vMetaVar betaTerm H.starType)) <$>
         translate ctx term (forAll vMetaVar)
@@ -171,8 +171,8 @@ translate ctx t tType = case t of
     let v = (newVar, H.Implication H.starType H.starType)
     let vMetaVar = H.MetaVar v
     phi <- fromMaybe newMetaVariable $ (\n -> return (n, H.starType)) <$> name
-    Exists v <$>
-      And (Equation tType (forAll vMetaVar)) <$>
+    Exists v .
+      And (Equation tType (forAll vMetaVar)) .
       M.ForAll phi <$> translate ctx term (H.App vMetaVar (H.MetaVar phi) H.starType)
 
 termToFTerms :: FTerm -> [FTerm]
@@ -187,7 +187,7 @@ injectQuantifiers t = t : injectQuantifiers' [t]
 
 injectQuantifiers' :: [FTerm] -> [FTerm]
 injectQuantifiers' previous =
-  let this = flip concatMap previous injectQuantifier
+  let this = concatMap injectQuantifier previous
   in
   this ++ injectQuantifiers' this
 
@@ -240,6 +240,6 @@ toTermType' :: [VarName] -> FTermType -> H.Term
 toTermType' bounded t = trace ("toTermType' 1: " ++ show t) $ case t of
   (VarType name) -> case elemIndex name bounded of
     (Just ix) -> H.Var (ix, H.starType)
-    (Nothing) -> trace ("toTermType': " ++ show name) $ H.FreeVar (name, H.starType)
+    Nothing -> trace ("toTermType': " ++ show name) $ H.FreeVar (name, H.starType)
   (Implication t1 t2) -> implication (toTermType' bounded t1) (toTermType' bounded t2)
   (Hou.SystemF.ForAll name term) -> forAll $ H.Abs H.starType $ toTermType' (name:bounded) term

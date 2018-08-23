@@ -66,18 +66,18 @@ toPrenexNormalForm form =
 
 -- TODO: for sake of simplicity consider to just use the fixed-point strategy
 raise :: (Solution s) => PrenexNormalForm -> s -> (RaisedNormalForm, s)
-raise f@(PNF { body = b }) s =
+raise f@PNF { body = b } s =
   let nextEnum = toEnum . (1 +) . maximum $ getMetavarId <$> concatMap getMetaVars [z | (x, y) <- b, z <- [x, y]] in
   runGenFrom nextEnum $ raise' f [] [] s
 
 raise' :: (MonadGen DeBruijnIndex m, Solution s) => PrenexNormalForm -> [MetaVariable] -> [MetaVariable] -> s -> m (RaisedNormalForm, s)
-raise' (PNF ((QExists var) : rest) body) [] exists s = do
+raise' (PNF (QExists var : rest) body) [] exists s =
   raise' (PNF rest body) [] (var : exists) s
   -- return (RNF (var : exists result) (forall result) (eqs result), s')
   -- return (result { exists = var : exists result }, s')
-raise' (PNF ((QForAll var) : rest) body) forall exists s = do
+raise' (PNF (QForAll var : rest) body) forall exists s =
   raise' (PNF rest body) (var : forall) exists s
-raise' (PNF ((QExists var) : rest) body) forall exists s = do
+raise' (PNF (QExists var : rest) body) forall exists s = do
   let varType = getTermType $ MetaVar var
   let newType = foldl (\b a -> Implication (getTermType a) b) varType $ MetaVar <$> forall
   newMetavarName <- gen
@@ -109,16 +109,16 @@ Translates a formula in raised normal form onto a single equation of the higher-
 unification problem.
 -}
 toEquation :: RaisedNormalForm -> Equation
-toEquation (RNF { exists = e, forall = f, eqs = eq }) = runIdentity $ do
+toEquation RNF { exists = e, forall = f, eqs = eq } = runIdentity $ do
   let zReturnType = someType
   let zType = foldr Implication zReturnType $ (getTermType . fst) <$> eq
   let zVar = Var (0, zType)
 
-  let bodyBuilder eqq = foldl (\b a -> let (Implication _ bT) = getTermType b in App b a bT) zVar eqq
+  let bodyBuilder = foldl (\b a -> let (Implication _ bT) = getTermType b in App b a bT) zVar
   let m1 = bodyBuilder $ fst <$> eq
   let m2 = bodyBuilder $ snd <$> eq
 
-  let lambdaBuilder for m = trace ("lambdas: " ++ show m) $ foldr (\a b -> abstractMetavariable a b) m for
+  let lambdaBuilder for m = trace ("lambdas: " ++ show m) $ foldr abstractMetavariable m for
   let appBuilder terms m = trace ("builder2: " ++ show m) $ foldl (\b a -> let (Implication _ bT) = getTermType b in trace ("builder: " ++ show (getTermType b)) $ App b a bT) m $ MetaVar <$> terms
   let resultBuilder es fs = appBuilder es . lambdaBuilder es . lambdaBuilder fs . Abs zType
 

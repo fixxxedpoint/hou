@@ -160,12 +160,10 @@ preunify' equations solution = interrupt $ callCC $ \exit -> do
   traceM ("preunify2: " ++ show simplified)
   traceM ("preunify3: " ++ show (isSolved simplified))
   when (isSolved simplified) $ exit solution
-  traceM ("preunify4")
+  traceM "preunify4"
   let flexRigid = head . filter (\(a, b) -> isFlexible a && isRigid b) $ simplified
   (mv, term) <- generateStep flexRigid
-  let thisSolution = add (clearSolution solution) mv term
-  let newEquations = (apply thisSolution *** apply thisSolution) <$> simplified
-  let newSolution = add solution mv term
+  let (newSolution, newEquations) = update mv term solution simplified
   traceM ("preuniy5: " ++ show newEquations)
   preunify' newEquations newSolution
 
@@ -203,10 +201,14 @@ unify' equations solution = interrupt $ callCC $ \exit -> do
   when (null simplified) $ exit solution
   traceM $ "unify4: " ++ show simplified
   (mv, term) <- generateStep (head simplified)
-  let thisSolution = add (clearSolution solution) mv term
-  let newEquations = (apply thisSolution *** apply thisSolution) <$> simplified
-  let newSolution = add solution mv term
+  let (newSolution, newEquations) = update mv term solution simplified
   unify' newEquations newSolution
+
+update mv term solution eqs = do
+  let thisSolution = add (clearSolution solution) mv term
+  let newEquations = (apply thisSolution *** apply thisSolution) <$> eqs
+  let newSolution = add solution mv term
+  (newSolution, newEquations)
 
 getMaxMetaVar :: [Equation] -> MetaVariableName
 getMaxMetaVar eqs = maximum $ getMetavarId <$> concatMap getMetaVars [z | (x, y) <- eqs, z <- [x, y]]
@@ -263,7 +265,7 @@ isRigid :: Term -> Bool
 isRigid = not . isFlexible
 
 isFlexible :: Term -> Bool
-isFlexible t | (MetaVar _, _) <- getHead t = trace "is flexible" $ True
+isFlexible t | (MetaVar _, _) <- getHead t = trace "is flexible" True
              | otherwise = False
 
 isVarType :: TermType -> Bool
@@ -386,7 +388,7 @@ raise = raise' 0
 
 toLongNormalForm :: Term -> Term
 toLongNormalForm t = let result = normalize . toLongNormalForm' . normalize $ t in
-  trace ("toLongNormalForm result: arg " ++ show t ++ " --- " ++ show result ++ "types:" ++ show (getTermType t == getTermType result)) $
+  trace ("toLongNormalForm result: arg " ++ show t ++ " --- " ++ show result ++ "types:" ++ show (getTermType t == getTermType result))
   result
 
 toLongNormalForm' :: Term -> Term
