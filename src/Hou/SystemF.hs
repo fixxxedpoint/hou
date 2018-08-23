@@ -78,7 +78,6 @@ inferType = Data.List.head . inferTypes
 If a given term is typable, it returns an infinite list of possible typings for it.
 -}
 inferTypes :: FTerm -> [FTermType]
--- inferTypes nterm = FML.toList . iterDepth 200 . (!!>) $ do
 inferTypes = FML.toList . inferTypes'
 
 inferTypes' :: FTerm -> FML.FMList FTermType

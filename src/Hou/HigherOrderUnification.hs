@@ -114,10 +114,6 @@ instance Solution ListSolution where
 instance (Computation m, Monad m) => Computation (GenT e m) where
   yield = lift . yield
 
-instance (Appl.Alternative m, MonadPlus m) => Monoid (GenT e m a) where
-  mempty = Appl.empty
-  mappend = (Appl.<|>)
-
 {-|
 Preunification algorithm tries to solve a given list of equations, returning a solution when all of
 the remaining equations are of the flex-flex form. It returns an infinite list of possible
@@ -224,7 +220,7 @@ getMetaVars' (App a b _) r       = getMetaVars' b $ getMetaVars' a r
 getMetaVars' (Abs _ body) r      = getMetaVars' body r
 getMetaVars' _ r                 = r
 
-simplify :: (Appl.Alternative m, MonadGen MetaVariableName m) => Equation -> m [Equation]
+simplify :: (MonadPlus m, MonadGen MetaVariableName m) => Equation -> m [Equation]
 simplify (t1, t2)
   | t1 == t2 = return [] -- check for metavars?
   -- if every flexible term is in eta-long form, then everything should be ok
@@ -247,9 +243,9 @@ simplify (t1, t2)
   | isRigid t1 && isFlexible t2 = trace "rigid-flex" $ return [(t2, t1)]
   | isFlexible t1 && isRigid t2 = trace ("flex-rigid: " ++ show t1 ++ " --- " ++ show t2) $ return [(t1, t2)]
   | isFlexible t1 && isFlexible t2 = trace "flex-flex" $ return [(t1, t2)]
-  | otherwise = trace "otherwise" Appl.empty
+  | otherwise = trace "otherwise" mzero
 
-fixPointOfSimplify :: (Appl.Alternative m, MonadGen MetaVariableName m) => [Equation] -> m [Equation]
+fixPointOfSimplify :: (MonadPlus m, MonadGen MetaVariableName m) => [Equation] -> m [Equation]
 fixPointOfSimplify cs = do
   traceM $ "fixPointOfSimplify: " ++ show cs
   cs' <- fold <$> mapM simplify cs
@@ -275,15 +271,14 @@ isVarType _           = False
 {-|
 Tries to non-deterministically solve an equation using projection or imitation.
 -}
-generateStep :: (Appl.Alternative m, Monoid (m Term), Monoid (m MetaVariable),
-                 MonadGen MetaVariableName m)
+generateStep :: (MonadPlus m, MonadGen MetaVariableName m)
              => Equation
              -> m (MetaVariable, Term)
 generateStep (flex, rigid) | isFlexible flex = do
   let (flexTerm, _) = getHead flex
   flexVariable <- case flexTerm of
                    (MetaVar var) -> return var
-                   _             -> mempty
+                   _             -> mzero
   let headConstant = getHeadConstant rigid
   let headFreeVar = getHeadFreeVar rigid
   let headMetaVar = getHeadMetaVar rigid
@@ -297,7 +292,7 @@ generateStep (flex, rigid) | isFlexible flex = do
   return (flexVariable, generatedTerm)
 generateStep _ = fail "first term of the equation is not flexible"
 
-generate :: (Appl.Alternative m, Monoid (m Term), MonadGen DeBruijnIndex m)
+generate :: (MonadPlus m, MonadGen DeBruijnIndex m)
          => TermType
          -> [Term]
          -> m Term
