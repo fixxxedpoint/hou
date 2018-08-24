@@ -116,19 +116,18 @@ instance (Computation m, Monad m) => Computation (GenT e m) where
 
 {-|
 Preunification algorithm tries to solve a given list of equations, returning a solution when all of
-the remaining equations are of the flex-flex form. It returns an infinite list of possible
-solutions.
+the remaining equations are of the flex-flex form. It returns a list of possible solutions.
 -}
 preunifyAllSolutions :: (Solution s) => [Equation] -> s -> [s]
 preunifyAllSolutions eqs s = FML.toList $ preunifyAllSolutions' eqs s
 
 preunifyAllSolutions' :: (Solution s) => [Equation] -> s -> FML.FMList s
-preunifyAllSolutions' eqs s = iterDepth 10 $ preunifyNonDeterministic eqs s
+preunifyAllSolutions' eqs s = iterDepth 200 $ preunifyNonDeterministic eqs s
 
 {-|
 Preunification algorithm tries to solve a given list of equations, returning a solution when all of
 the remaining equations are of the flex-flex form. It returns a non-deterministic computation
-producing an infinite list of possible solutions.
+producing a list of possible solutions.
 -}
 preunifyNonDeterministic :: (Solution s, Monoid (n r)) => [Equation] -> s -> NonDeterministicT r n s
 preunifyNonDeterministic eqs s =
@@ -164,16 +163,22 @@ preunify' equations solution = interrupt $ callCC $ \exit -> do
   preunify' newEquations newSolution
 
 {-|
-Complete unifies a list of equations. It returns an infinite list of possible solutions.
+Completely unifies a list of equations. It returns a list of possible solutions.
 -}
-unifyAllSolutions :: (Solution s, Monoid (m s), Computation m, MonadPlus m) => [Equation] -> s -> m s
-unifyAllSolutions eqs s = iterDepth 10 $ unifyNonDeterministic eqs s
+unifyAllSolutions :: (Solution s, Monoid (m s), Computation m, MonadPlus m)
+                  => [Equation]
+                  -> s
+                  -> m s
+unifyAllSolutions eqs s = iterDepth 200 $ unifyNonDeterministic eqs s
 
 {-|
-Complete unifies a list of equations. It returns a non-deterministic computation producing an
-infinite list of possible solutions.
+Completely unifies a list of equations. It returns a non-deterministic computation producing a list
+of possible solutions.
 -}
-unifyNonDeterministic :: (Solution s, Monoid (n r)) => [Equation] -> s -> NonDeterministicT r n s
+unifyNonDeterministic :: (Solution s, Monoid (n r))
+                      => [Equation]
+                      -> s
+                      -> NonDeterministicT r n s
 unifyNonDeterministic eqs s =
   let nextEnum = toEnum . (1 +) . getMaxMetaVar $ eqs in
   trace "preunifyF..." $ runGenTFrom nextEnum $ unify eqs s
@@ -188,7 +193,10 @@ unify eqs s = do
   traceM "already preunified"
   unify' ((apply presolution *** apply presolution) <$> lnf) presolution
 
-unify' :: (Solution s, Monoid (n r)) => [Equation] -> s -> GenT MetaVariableName (NonDeterministicT r n) s
+unify' :: (Solution s, Monoid (n r))
+       => [Equation]
+       -> s
+       -> GenT MetaVariableName (NonDeterministicT r n) s
 unify' equations solution = interrupt $ callCC $ \exit -> do
   traceM ("unify: " ++ show equations)
   simplified <- fixPointOfSimplify $ (normalize *** normalize) <$> equations
@@ -207,7 +215,8 @@ update mv term solution eqs = do
   (newSolution, newEquations)
 
 getMaxMetaVar :: [Equation] -> MetaVariableName
-getMaxMetaVar eqs = maximum $ getMetavarId <$> concatMap getMetaVars [z | (x, y) <- eqs, z <- [x, y]]
+getMaxMetaVar eqs =
+  maximum $ getMetavarId <$> concatMap getMetaVars [z | (x, y) <- eqs, z <- [x, y]]
 
 getMetavarId :: MetaVariable -> MetaVariableName
 getMetavarId (ix, _) = ix
@@ -223,7 +232,6 @@ getMetaVars' _ r                 = r
 simplify :: (MonadPlus m, MonadGen MetaVariableName m) => Equation -> m [Equation]
 simplify (t1, t2)
   | t1 == t2 = return [] -- check for metavars?
-  -- if every flexible term is in eta-long form, then everything should be ok
   | (Abs type1 a) <- t1,
     (Abs type2 b) <- t2,
     type1 == type2 = do
@@ -333,7 +341,11 @@ generateLongBody variables head = foldM newArgVar head $ getTermType . Var <$> t
       let newType = liftType tType
       newMetavar <- newArg newType
       traceM $ "newArgVar" ++ show tType
-      let appliedMetavar = Data.Foldable.foldl (\a b -> App a b (shiftType . getTermType $ a)) newMetavar $ Var <$> variables
+      let appliedMetavar =
+            Data.Foldable.foldl
+            (\a b -> App a b (shiftType . getTermType $ a))
+            newMetavar
+            (Var <$> variables)
       return $ App body appliedMetavar $ shiftType . getTermType $ body
 
     liftType tType = Data.Foldable.foldr Implication tType $ getTermType . Var <$> variables
@@ -342,7 +354,10 @@ generateLongBody variables head = foldM newArgVar head $ getTermType . Var <$> t
     shiftType t                 = t
 
 getAssumptionsAndGoal :: TermType -> ([Variable], TermType)
-getAssumptionsAndGoal t = (Data.Foldable.foldr (\tType result -> (newDeBruijnIndex result, tType) : result) [] . init . Hou.HigherOrderUnification.foldr (:) [] $ t, getGoal t)
+getAssumptionsAndGoal t =
+  (Data.Foldable.foldr (\tType result -> (newDeBruijnIndex result, tType) : result) [] . init .
+    Hou.HigherOrderUnification.foldr (:) [] $ t,
+  getGoal t)
   where newDeBruijnIndex []          = 0
         newDeBruijnIndex ((ix, _):_) = ix + 1
 
@@ -394,7 +409,11 @@ toLongNormalForm' v = do
   let newVar = case v of
         (Var (ix, termType)) -> Var (ix + length assumptions, termType)
         _                    -> v
-  let body = Data.Foldable.foldl (\b a -> let (Implication _ tType) = getTermType b in App b (toLongNormalForm' a) tType) newVar $ Var <$> assumptions
+  let body =
+        Data.Foldable.foldl
+        (\b a -> let (Implication _ tType) = getTermType b in App b (toLongNormalForm' a) tType)
+        newVar
+        (Var <$> assumptions)
   Data.Foldable.foldr (\a b -> Abs (getTermType a) b) body $ Var <$> assumptions
 
 normalize :: Term -> Term
