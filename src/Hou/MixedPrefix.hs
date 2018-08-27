@@ -134,7 +134,7 @@ Tries to solve a given instance of the higher-order unification with mixed quant
 a first solution that was found by the search strategy.
 -}
 solve :: (Solution s) => HouFormula -> s -> s
-solve f s = FML.head . iterDepth 10 $ solveNonDeterministic f s
+solve f s = FML.head . iterDepthDefault $ solveNonDeterministic f s
 
 {-|
 Given an instance of the higher-order unification with mixed quantifiers it returns

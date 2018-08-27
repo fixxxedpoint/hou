@@ -135,6 +135,9 @@ iterDepth :: (Computation m, Monoid (m a))
           -> m a
 iterDepth step = runLevels . levelIter step
 
+iterDepthDefault :: (Computation m, Monoid (m a)) => NonDeterministicT a (DepthBounded m) a -> m a
+iterDepthDefault = iterDepth 10
+
 interrupt :: (Alternative a) => a b -> a b
 interrupt v = v <|> Appl.empty
 

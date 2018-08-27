@@ -81,7 +81,7 @@ inferTypes :: FTerm -> [FTermType]
 inferTypes = FML.toList . inferTypes'
 
 inferTypes' :: FTerm -> FML.FMList FTermType
-inferTypes' nterm = iterDepth 200 $ do
+inferTypes' nterm = iterDepthDefault $ do
   term <- anyOf $ termToFTerms nterm
   solution <- inferFTerm term
   return solution

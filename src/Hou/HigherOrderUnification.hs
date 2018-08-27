@@ -122,7 +122,7 @@ preunifyAllSolutions :: (Solution s) => [Equation] -> s -> [s]
 preunifyAllSolutions eqs s = FML.toList $ preunifyAllSolutions' eqs s
 
 preunifyAllSolutions' :: (Solution s) => [Equation] -> s -> FML.FMList s
-preunifyAllSolutions' eqs s = iterDepth 200 $ preunifyNonDeterministic eqs s
+preunifyAllSolutions' eqs s = iterDepthDefault $ preunifyNonDeterministic eqs s
 
 {-|
 Preunification algorithm tries to solve a given list of equations, returning a solution when all of
@@ -169,7 +169,7 @@ unifyAllSolutions :: (Solution s, Monoid (m s), Computation m, MonadPlus m)
                   => [Equation]
                   -> s
                   -> m s
-unifyAllSolutions eqs s = iterDepth 200 $ unifyNonDeterministic eqs s
+unifyAllSolutions eqs s = iterDepthDefault $ unifyNonDeterministic eqs s
 
 {-|
 Completely unifies a list of equations. It returns a non-deterministic computation producing a list
