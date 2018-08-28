@@ -17,6 +17,7 @@ module Hou.SystemF(
   ) where
 
 import qualified Hou.HigherOrderUnification as H
+import           Hou.InferenceUtils         as IU
 import           Hou.Levels
 import           Hou.MixedPrefix            as M
 import           Hou.Trace
@@ -24,7 +25,6 @@ import           Hou.Trace
 import           Control.Monad.Gen
 import           Data.FMList                as FML
 import           Data.List
-import           Data.Map
 import           Data.Maybe
 
 
@@ -39,8 +39,6 @@ data FTermType =
   ForAll VarName FTermType
   deriving (Show, Read, Eq)
 
-type Name = String
-
 {-|
 Represents terms of SystemF.
 -}
@@ -51,22 +49,6 @@ data FTerm =
   Abs Name (Maybe FTermType) FTerm |
   TypeAbs (Maybe VarName) FTerm
   deriving (Show, Read, Eq)
-
-{-|
-Class representing a set of typings of variables used by process of type inference/checking.
--}
-class Context c where
-  lookup :: c -> Name -> Maybe H.Term
-  add :: c -> Name -> H.Term -> c
-
-newtype MapContext = MC (Map Name H.Term)
-
-createMapContext :: MapContext
-createMapContext = MC Data.Map.empty
-
-instance Context MapContext where
-  lookup (MC c) = flip Data.Map.lookup c
-  add (MC c) name term = MC $ Data.Map.insert name term c
 
 {-|
 Function returning first valid type found for a given term.
@@ -114,12 +96,6 @@ newMetaVariable = do
   newVar <- gen
   return (newVar, H.starType)
 
-implication :: H.Term -> H.Term -> H.Term
-implication t1 t2 | H.getTermType t1 == H.starType && H.getTermType t2 == H.starType =
-  H.App
-  (H.App (H.Constant ("->", H.Implication H.starType (H.Implication H.starType H.starType))) t1 (H.Implication H.starType H.starType))
-  t2 H.starType
-
 forAll :: H.Term -> H.Term
 forAll t | H.getTermType t == H.Implication H.starType H.starType = H.App (H.Constant ("∀", H.Implication (H.Implication H.starType H.starType) H.starType)) t H.starType
 
@@ -130,7 +106,7 @@ the problem of higher-order unification.
 translate :: (MonadGen H.MetaVariableName m, Context c) => c -> FTerm -> H.Term -> m HouFormula
 translate ctx t tType = case t of
   (Var name termType) ->
-    case Hou.SystemF.lookup ctx name of
+    case IU.lookup ctx name of
       Nothing -> fail "definition of a variable was not found in the context"
       (Just ctxType) ->
         case termType of
