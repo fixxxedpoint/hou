@@ -111,9 +111,6 @@ instance Solution ListSolution where
   apply (LS (s:rest)) t@(MetaVar _) = trace "5" $ apply (LS [s]) $ apply (LS rest) t
   apply _ t = trace "6" t
 
-instance (Computation m, Monad m) => Computation (GenT e m) where
-  yield = lift . yield
-
 {-|
 Preunification algorithm tries to solve a given list of equations, returning a solution when all of
 the remaining equations are of the flex-flex form. It returns a list of possible solutions.
@@ -129,19 +126,19 @@ Preunification algorithm tries to solve a given list of equations, returning a s
 the remaining equations are of the flex-flex form. It returns a non-deterministic computation
 producing a list of possible solutions.
 -}
-preunifyNonDeterministic :: (Solution s, Monoid (n r)) => [Equation] -> s -> NonDeterministicT r n s
+preunifyNonDeterministic :: (Solution s, NonDet n) => [Equation] -> s -> NonDeterministicT r n s
 preunifyNonDeterministic eqs s =
   let nextEnum = toEnum . (1 +) . getMaxMetaVar $ eqs in
   trace "preunifyNonD..." $ runGenTFrom nextEnum $ preunify eqs s
 
-preunify :: (Solution s, Monoid (n r))
+preunify :: (Solution s, NonDet n)
          => [Equation]
          -> s
          -> GenT MetaVariableName (NonDeterministicT r n) s
 preunify eqs s = let lnf = (toLongNormalForm *** toLongNormalForm) <$> eqs in
   preunify' lnf s
 
-preunify' :: (Solution s, Monoid (n r))
+preunify' :: (Solution s, NonDet n)
           => [Equation]
           -> s
           -> GenT MetaVariableName (NonDeterministicT r n) s
@@ -165,7 +162,7 @@ preunify' equations solution = interrupt $ callCC $ \exit -> do
 {-|
 Completely unifies a list of equations. It returns a list of possible solutions.
 -}
-unifyAllSolutions :: (Solution s, Monoid (m s), Computation m, MonadPlus m)
+unifyAllSolutions :: (Solution s, NonDet m, Computation m, MonadPlus m)
                   => [Equation]
                   -> s
                   -> m s
@@ -175,7 +172,7 @@ unifyAllSolutions eqs s = iterDepthDefault $ unifyNonDeterministic eqs s
 Completely unifies a list of equations. It returns a non-deterministic computation producing a list
 of possible solutions.
 -}
-unifyNonDeterministic :: (Solution s, Monoid (n r))
+unifyNonDeterministic :: (Solution s, NonDet n)
                       => [Equation]
                       -> s
                       -> NonDeterministicT r n s
@@ -183,7 +180,7 @@ unifyNonDeterministic eqs s =
   let nextEnum = toEnum . (1 +) . getMaxMetaVar $ eqs in
   trace "preunifyF..." $ runGenTFrom nextEnum $ unify eqs s
 
-unify :: (Solution s, Monoid (n r))
+unify :: (Solution s, NonDet n)
       => [Equation]
       -> s
       -> GenT MetaVariableName (NonDeterministicT r n) s
@@ -193,7 +190,7 @@ unify eqs s = do
   traceM "already preunified"
   unify' ((apply presolution *** apply presolution) <$> lnf) presolution
 
-unify' :: (Solution s, Monoid (n r))
+unify' :: (Solution s, NonDet n)
        => [Equation]
        -> s
        -> GenT MetaVariableName (NonDeterministicT r n) s
@@ -208,6 +205,7 @@ unify' equations solution = interrupt $ callCC $ \exit -> do
   let (newSolution, newEquations) = update mv term solution simplified
   unify' newEquations newSolution
 
+update :: (Solution s) => MetaVariable -> Term -> s -> [Equation] -> (s, [Equation])
 update mv term solution eqs = do
   let thisSolution = add (clearSolution solution) mv term
   let newEquations = (apply thisSolution *** apply thisSolution) <$> eqs

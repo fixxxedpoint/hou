@@ -86,7 +86,7 @@ inferTypes' nterm = iterDepthDefault $ do
   solution <- inferFTerm term
   return solution
 
-inferFTerm :: (Monoid (n r)) => FTerm -> NonDeterministicT r n FTermType
+inferFTerm :: (NonDet n) => FTerm -> NonDeterministicT r n FTermType
 inferFTerm t = trace ("inferFTerm: " ++ show t) $ do
   let (fixedFormula, resultType) = prepareFormula t
   traceM $ "inferFTerm 1: " ++ show fixedFormula

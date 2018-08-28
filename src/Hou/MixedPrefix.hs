@@ -140,7 +140,7 @@ solve f s = FML.head . iterDepthDefault $ solveNonDeterministic f s
 Given an instance of the higher-order unification with mixed quantifiers it returns
 a non-deterministic computation that tries to solve a given formula.
 -}
-solveNonDeterministic :: (Solution s, Monoid (n r)) => HouFormula -> s -> NonDeterministicT r n s
+solveNonDeterministic :: (Solution s, NonDet n) => HouFormula -> s -> NonDeterministicT r n s
 solveNonDeterministic f s = do
   let prenexNormalForm = toPrenexNormalForm f
   let (raised, s') = raise prenexNormalForm s

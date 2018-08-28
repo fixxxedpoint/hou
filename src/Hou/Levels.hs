@@ -21,9 +21,12 @@ import           Hou.Trace
 import           Control.Applicative as Appl
 import           Control.Monad.Cont
 import           Control.Monad.Gen
-import           Control.Monad.State
 import qualified Data.FMList         as FML
 
+
+class NonDet n where
+  failure :: n a
+  choice :: n a -> n a -> n a
 
 newtype DiffList a = DiffList { (>>>) :: [a] -> [a] }
 
@@ -34,34 +37,34 @@ newtype DepthBounded n a = DepthBounded { (!) :: Integer -> n a }
 newtype NonDeterministicT r (m :: * -> *) a = NDT { (!!>) :: ContT r m a }
   deriving (Functor, Applicative, Monad, MonadCont, MonadTrans)
 
+instance (NonDet n) => NonDet (DepthBounded n) where
+  failure = DepthBounded . const $ failure
+  choice a b = DepthBounded $ \d -> if d == 0 then failure
+                                    else choice (a ! (d-1)) (b ! (d-1))
+
+instance (NonDet m) => MonadPlus (NonDeterministicT r m) where
+  mzero = NDT . ContT . const $ failure
+  mplus a b = NDT . ContT $ \c -> choice ((runContT . (!!>)) a c) ((runContT . (!!>)) b c)
+
 instance (MonadGen e m) => MonadGen e (NonDeterministicT r m) where
   gen = lift gen
 
-instance (Monoid (m r)) => MonadPlus (NonDeterministicT r m) where
-  mzero = NDT . ContT . const $ mempty
-  mplus a b = NDT . ContT $ \c -> mappend ((runContT . (!!>)) a c) ((runContT . (!!>)) b c)
+instance (NonDet m) => NonDet (NonDeterministicT r m) where
+  failure = mzero
+  choice = mplus
 
-instance (Monoid (m r)) => Monoid (NonDeterministicT r m a) where
-  mempty = mzero
-  mappend = mplus
-
-instance (Monoid (m r)) => Alternative (NonDeterministicT r m) where
+instance (NonDet m) => Alternative (NonDeterministicT r m) where
   empty = mzero
   (<|>) = mplus
 
-instance (Monoid (n a)) => Monoid (DepthBounded n a) where
-  mempty = DepthBounded . const $ mempty
-  mappend a b = DepthBounded $ \d -> if d == 0 then mempty
-                                     else mappend (a ! (d-1)) (b ! (d-1))
+instance (NonDet n) => NonDet (Levels n) where
+  failure = Levels { levels = [] }
+  choice a b = Levels { levels = failure : merge (levels a) (levels b) }
 
-instance (Monoid (n a)) => Monoid (Levels n a) where
-  mempty = Levels { levels = [] }
-  mappend a b = Levels { levels = mempty : merge (levels a) (levels b) }
-
-merge :: (Monoid n) => [n] -> [n] -> [n]
+merge :: (NonDet n) => [n a] -> [n a] -> [n a]
 merge [] ys         = ys
 merge xs []         = xs
-merge (x:xs) (y:ys) = mappend x y : merge xs ys
+merge (x:xs) (y:ys) = choice x y : merge xs ys
 
 class Computation c where
   yield :: a -> c a
@@ -98,6 +101,17 @@ instance MonadPlus DiffList where
   mzero = Appl.empty
   mplus = (<|>)
 
+instance NonDet DiffList where
+  failure = mzero
+  choice = mplus
+
+instance NonDet FML.FMList where
+  failure = mzero
+  choice = mappend
+
+instance (Computation m, Monad m) => Computation (GenT e m) where
+  yield = lift . yield
+
 empty :: DiffList a
 empty = DiffList { (>>>)=id }
 
@@ -110,13 +124,13 @@ a +++ b = DiffList { (>>>)=(a >>>) . (b >>>) }
 toList :: DiffList a -> [a]
 toList a = a >>> []
 
-runLevels :: (Monoid (n a)) => Levels n a -> n a
-runLevels = foldr mappend mempty . levels
+runLevels :: (NonDet n) => Levels n a -> n a
+runLevels = foldr choice failure . levels
 
-levelSearch :: (Computation m, Monoid (m a)) => NonDeterministicT a (Levels m) a -> m a
+levelSearch :: (Computation m, NonDet m) => NonDeterministicT a (Levels m) a -> m a
 levelSearch c = runLevels . (runContT . (!!>)) c $ yield
 
-levelIter :: (Computation m, Monoid (m a))
+levelIter :: (Computation m, NonDet m)
           => Integer
           -> NonDeterministicT a (DepthBounded m) a
           -> Levels m a
@@ -126,16 +140,16 @@ levelIter step c =
   }
   where yieldB x =
           DepthBounded {
-            (!) = \d -> trace ("levelIter: " ++ show d) $ if d < step then trace "yielding" $ yield x else trace "levelIter" mempty
+            (!) = \d -> trace ("levelIter: " ++ show d) $ if d < step then trace "yielding" $ yield x else trace "levelIter" failure
           }
 
-iterDepth :: (Computation m, Monoid (m a))
+iterDepth :: (Computation m, NonDet m)
           => Integer
           -> NonDeterministicT a (DepthBounded m) a
           -> m a
 iterDepth step = runLevels . levelIter step
 
-iterDepthDefault :: (Computation m, Monoid (m a)) => NonDeterministicT a (DepthBounded m) a -> m a
+iterDepthDefault :: (Computation m, NonDet m) => NonDeterministicT a (DepthBounded m) a -> m a
 iterDepthDefault = iterDepth 200
 
 interrupt :: (Alternative a) => a b -> a b
