@@ -61,8 +61,10 @@ type Constant = (ConstantName, TermType)
 
 type Variable = (DeBruijnIndex, TermType)
 
+type VarTypeName = Int
+
 data TermType =
-  VarType DeBruijnIndex |
+  VarType VarTypeName |
   Implication TermType TermType
   deriving (Eq, Show)
 
@@ -298,7 +300,7 @@ generateStep (flex, rigid) | isFlexible flex = do
   return (flexVariable, generatedTerm)
 generateStep _ = fail "first term of the equation is not flexible"
 
-generate :: (MonadPlus m, MonadGen DeBruijnIndex m)
+generate :: (MonadPlus m, MonadGen MetaVariableName m)
          => TermType
          -> [Term]
          -> m Term
@@ -319,14 +321,14 @@ generate varType availableTerms = do
   --   else return ()
   return $ toLongNormalForm result
 
-generateLongTerm :: (MonadGen DeBruijnIndex m) => [Variable] -> Term -> m Term
+generateLongTerm :: (MonadGen MetaVariableName m) => [Variable] -> Term -> m Term
 generateLongTerm lambdas head = do
   traceM ("long term head: " ++ show head)
   body <- generateLongBody lambdas head
   traceM ("long term: " ++ show body)
   return $ Data.Foldable.foldr (Abs . getTermType . Var) body lambdas
 
-generateLongBody :: (MonadGen DeBruijnIndex m) => [Variable] -> Term -> m Term
+generateLongBody :: (MonadGen MetaVariableName m) => [Variable] -> Term -> m Term
 generateLongBody variables head = foldM newArgVar head $ getTermType . Var <$> trace ("assumptions: " ++ show assumptions) assumptions
   where
     (assumptions, _) = getAssumptionsAndGoal . getTermType $ head
