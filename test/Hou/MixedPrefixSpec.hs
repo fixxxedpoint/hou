@@ -5,7 +5,7 @@ License     : MIT, see the file LICENSE
 -}
 module Hou.MixedPrefixSpec where
 
-import           Hou.HigherOrderUnification
+import           Hou.HigherOrderUnification hiding (raise)
 import           Hou.MixedPrefix            as M
 
 import           Test.Hspec
@@ -127,29 +127,29 @@ spec = do
       let result1 =
             App
               (App
-                 (Abs (varType 0) (Abs (varType 0) (Abs (Pi (varType 0) (varType 1))
+                 (Abs (starType) (Abs (starType) (Abs (Pi (starType) (someType))
                    (App
-                     (Var (0,Pi (varType 0) (varType 1)))
-                     (Var (2,varType 0))
-                     (varType 1)))))
+                     (Var (0,Pi (starType) (someType)))
+                     (Var (2,starType))
+                     (someType)))))
                  (MetaVar mv1)
-                 (Pi (varType 0) (Pi (Pi (varType 0) (varType 1)) (varType 1)))
+                 (Pi (starType) (Pi (Pi (starType) (someType)) (someType)))
               )
               (MetaVar mv2)
-              (Pi (Pi (varType 0) (varType 1)) (varType 1))
+              (Pi (Pi (starType) (someType)) (someType))
 
       let result2 =
             App
               (App
-                 (Abs (varType 0) (Abs (varType 0) (Abs (Pi (varType 0) (varType 1))
+                 (Abs (starType) (Abs (starType) (Abs (Pi (starType) (someType))
                    (App
-                     (Var (0,Pi (varType 0) (varType 1)))
-                     (Var (1,varType 0))
-                     (varType 1)))))
+                     (Var (0,Pi (starType) (someType)))
+                     (Var (1,starType))
+                     (someType)))))
                  (MetaVar mv1)
-                 (Pi (varType 0) (Pi (Pi (varType 0) (varType 1)) (varType 1)))
+                 (Pi (starType) (Pi (Pi (starType) (someType)) (someType)))
               )
               (MetaVar mv2)
-              (Pi (Pi (varType 0) (varType 1)) (varType 1))
+              (Pi (Pi (starType) (someType)) (someType))
 
       toEquation formula `shouldBe` (result1, result2)

@@ -18,7 +18,7 @@ module Hou.MixedPrefix(
   solve,
   solveNonDeterministic,
   toPrenexNormalForm,
-  raise,
+  Hou.MixedPrefix.raise,
   toEquation
   )
   where
@@ -79,7 +79,7 @@ raise' (PNF (QForAll var : rest) body) forall exists s =
   raise' (PNF rest body) (var : forall) exists s
 raise' (PNF (QExists var : rest) body) forall exists s = do
   let varType = getTermType $ MetaVar var
-  let newType = foldl (\b a -> Pi (getTermType a) b) varType $ MetaVar <$> forall
+  let newType = foldl (\b a -> Pi (getTermType $ MetaVar a) b) varType forall
   newMetavarName <- gen
   let newMetavar = (newMetavarName, newType)
   let newVar = foldr (\a b -> let (Pi _ r) = getTermType b in App b a r) (MetaVar newMetavar) $ MetaVar <$> forall
@@ -143,7 +143,7 @@ a non-deterministic computation that tries to solve a given formula.
 solveNonDeterministic :: (Solution s, NonDet n) => HouFormula -> s -> NonDeterministicT r n s
 solveNonDeterministic f s = do
   let prenexNormalForm = toPrenexNormalForm f
-  let (raised, s') = raise prenexNormalForm s
+  let (raised, s') = Hou.MixedPrefix.raise prenexNormalForm s
   let equation = toEquation raised
   traceM $ "solveNonDeterministic 1: " ++ show prenexNormalForm
   traceM $ "solveNonDeterministic 2: " ++ show equation

@@ -20,6 +20,7 @@ module Hou.HigherOrderUnification(
   Equation,
   DeBruijnIndex,
   MetaVariableName,
+  FreeVarName,
   Solution(..),
   getTermType,
   someType,
@@ -33,7 +34,10 @@ module Hou.HigherOrderUnification(
   normalize,
   getMetaVars,
   getMetavarId,
-  getHead
+  getHead,
+  substitute,
+  substituteFV,
+  raise
   )
   where
 
@@ -56,7 +60,7 @@ type DeBruijnIndex = Int
 
 type MetaVariableName = Int
 
-type FreeVarName = Int
+type FreeVarName = MetaVariableName
 
 type VarTypeName = Int
 
@@ -69,12 +73,12 @@ type Variable = (DeBruijnIndex, TermType)
 type FreeVariable = (FreeVarName, TermType)
 
 starType :: TermType
--- starType = Constant ("*", Uni)
-starType = FreeVar (0, Uni)
+starType = Uni -- Constant ("*", Uni)
+-- starType = FreeVar (0, Uni)
 
 someType :: TermType
--- someType = Constant ("a", Uni)
-someType = FreeVar (1, Uni)
+someType = Constant ("a", Uni)
+-- someType = FreeVar (1, Uni)
 
 varType :: Int -> TermType
 varType name = FreeVar (name, Uni)
@@ -258,6 +262,13 @@ simplify (t1, t2)
       traceM "simplify deeper"
       guard (c1 == c2) -- this can fail the whole process
       fold <$> mapM simplify (zip ctx1 ctx2) -- faster than using fixPointOfSimplify
+  | (Pi type1 body1) <- t1,
+    (Pi type2 body2) <- t2 = do
+      newVar <- gen
+      let newCons = FreeVar (newVar, type1)
+      let newBody1 = substitute newCons 0 body1
+      let newBody2 = substitute newCons 0 body2
+      return [(type1, type2), (newBody1, newBody2)]
   | isRigid t1 && isFlexible t2 = trace "rigid-flex" $ return [(t2, t1)]
   | isFlexible t1 && isRigid t2 = trace ("flex-rigid: " ++ show t1 ++ " --- " ++ show t2) $ return [(t1, t2)]
   | isFlexible t1 && isFlexible t2 = trace "flex-flex" $ return [(t1, t2)]
@@ -394,7 +405,15 @@ substitute new index term = case term of
     GT -> Var (deBruijnIndex-1, varType)
   App a b termType -> App (substitute new index a) (substitute new index b) termType
   Abs termType a -> Abs termType (substitute (raise 1 new) (index+1) a)
+  Pi from to -> Pi (substitute new index from) (substitute (raise 1 new) (index+1) to)
   _ -> term
+
+substituteFV :: Term -> FreeVariable -> Term -> Term
+substituteFV new fv@(ix, fvType) term | fvType == getTermType new = case term of
+  FreeVar (ix2, fvType2) | fvType2 == fvType, ix == ix2 -> new
+  App a b termType -> App (substituteFV new fv a) (substituteFV new fv b) (substituteFV new fv termType)
+  Abs termType a -> Abs (substituteFV new fv termType) (substituteFV (raise 1 new) fv a)
+  Pi from to -> Pi (substituteFV new fv from) (substituteFV (raise 1 new) fv to)
 
 raise :: Int -> Term -> Term
 raise = raise' 0
@@ -430,8 +449,8 @@ normalize :: Term -> Term
 normalize t = case t of
   App l r tType -> case normalize l of
     Abs _ body -> normalize (substitute (normalize r) 0 body)
-    l'         -> App l' (normalize r) tType
-  Abs varType body -> Abs varType $ normalize body
+    l'         -> App l' (normalize r) $ normalize tType
+  Abs varType body -> Abs (normalize varType) (normalize body)
   v -> v
 
 getHead :: Term -> (Term, [Term])
