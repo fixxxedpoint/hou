@@ -9,6 +9,8 @@ import           Hou.SystemF
 
 import           Test.Hspec
 
+import           Debug.Trace
+
 
 spec :: Spec
 spec = do
@@ -24,11 +26,11 @@ spec = do
   describe "infer type of polymorphic identity" $ do
     it "should return a type of the form forall x . x -> x" $ do
       let term = TypeAbs Nothing $ Abs "x" Nothing $ Var "x" Nothing
-      let termsType = ForAll 0 (Implication (VarType 0) (VarType 0))
+      let termsType = toTermType $ ForAll 0 (Implication (VarType 0) (VarType 0))
 
-      let result = head . filter ((==) (toTermType termsType)) $ toTermType <$> inferTypes term
+      let result = head . filter ((==) termsType) $ toTermType <$> inferTypes term
 
-      result `shouldBe` toTermType termsType
+      result `shouldBe` termsType
 
   describe "infer type of \\lambda x . x x with type annotations" $ do
     it "should return a type of the form (forall x . x -> x) -> (forall x . x -> x)" $ do
@@ -78,4 +80,21 @@ spec = do
 
       let result = inferTypes term
 
+      traceM $ show (head result)
+
       result `shouldNotBe` []
+
+  -- describe "infer type of (\\lambda x . x x)((\\lambda x . x x) (\\lambda x . x)) without type annotations" $ do
+  --   it "should return some type" $ do
+  --     let term =
+  --           App
+  --             (Abs "x" Nothing (App (Var "x" Nothing) (Var "x" Nothing)))
+  --             (
+  --               App
+  --                 (Abs "y" Nothing (App (Var "y" Nothing) (Var "y" Nothing)))
+  --                 (Abs "z" Nothing (Var "z" Nothing))
+  --             )
+
+  --     let result = inferTypes term
+
+  --     result `shouldNotBe` []

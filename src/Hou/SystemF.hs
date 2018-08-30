@@ -97,13 +97,13 @@ newMetaVariable = do
   return (newVar, H.starType)
 
 forAll :: H.Term -> H.Term
-forAll t | H.getTermType t == H.Implication H.starType H.starType = H.App (H.Constant ("∀", H.Implication (H.Implication H.starType H.starType) H.starType)) t H.starType
+forAll t | H.getTermType t == H.Pi H.starType H.starType = H.App (H.Constant ("∀", H.Pi (H.Pi H.starType H.starType) H.starType)) t H.starType
 
 {-|
 Main function of this module. It translates a problem of typing of a term of SystemF  onto
 the problem of higher-order unification.
 -}
-translate :: (MonadGen H.MetaVariableName m, Context c) => c -> FTerm -> H.Term -> m HouFormula
+translate :: (MonadGen H.MetaVariableName m, Context c Name H.Term) => c -> FTerm -> H.Term -> m HouFormula
 translate ctx t tType = case t of
   (Var name termType) ->
     case IU.lookup ctx name of
@@ -134,7 +134,7 @@ translate ctx t tType = case t of
     beta <- newMetaVariable
     let betaTerm = fromMaybe (H.MetaVar beta) $ toTermType <$> termType
     vName <- gen
-    let v = (vName, H.Implication H.starType H.starType)
+    let v = (vName, H.Pi H.starType H.starType)
     let vMetaVar = H.MetaVar v
     Exists beta . Exists v .
       And
@@ -143,7 +143,7 @@ translate ctx t tType = case t of
 
   (TypeAbs name term) -> do
     newVar <- gen
-    let v = (newVar, H.Implication H.starType H.starType)
+    let v = (newVar, H.Pi H.starType H.starType)
     let vMetaVar = H.MetaVar v
     phi <- fromMaybe newMetaVariable $ (\n -> return (n, H.starType)) <$> name
     Exists v .
@@ -193,6 +193,7 @@ countFreeAndMetaVars t = case t of
 
 toFTermType' :: (MonadGen VarName m) => [VarName] -> H.Term -> m FTermType
 toFTermType' lambdas t = case t of
+  -- TODO: this removes the need for unify, FreeVars and MetaVars should have different names
   (H.MetaVar (ix, _)) -> return $ VarType ix
   (H.Var (ix, _)) -> return $ VarType $ lambdas !! ix
   (H.FreeVar (ix, _)) -> return $ VarType ix

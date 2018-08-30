@@ -24,6 +24,7 @@ module Hou.HigherOrderUnification(
   getTermType,
   someType,
   starType,
+  varType,
   preunifyAllSolutions,
   preunifyNonDeterministic,
   unifyAllSolutions,
@@ -55,33 +56,42 @@ type DeBruijnIndex = Int
 
 type MetaVariableName = Int
 
+type FreeVarName = Int
+
+type VarTypeName = Int
+
 type MetaVariable = (MetaVariableName, TermType)
 
 type Constant = (ConstantName, TermType)
 
 type Variable = (DeBruijnIndex, TermType)
 
-type VarTypeName = Int
-
-data TermType =
-  VarType VarTypeName |
-  Implication TermType TermType
-  deriving (Eq, Show)
+type FreeVariable = (FreeVarName, TermType)
 
 starType :: TermType
-starType = VarType 0
+-- starType = Constant ("*", Uni)
+starType = FreeVar (0, Uni)
 
 someType :: TermType
-someType = VarType 1
+-- someType = Constant ("a", Uni)
+someType = FreeVar (1, Uni)
+
+varType :: Int -> TermType
+varType name = FreeVar (name, Uni)
 
 data Term =
   MetaVar MetaVariable |
   Constant Constant |
   Var Variable |
-  FreeVar Variable |
+  FreeVar FreeVariable |
   App Term Term TermType |
-  Abs TermType Term
-  deriving (Eq, Show)
+  Abs TermType Term |
+  Uni |
+  Pi TermType Term
+  -- Pi Term Term
+  deriving (Eq, Read, Show)
+
+type TermType = Term
 
 type Equation = (Term, Term)
 
@@ -273,8 +283,8 @@ isFlexible t | (MetaVar _, _) <- getHead t = trace "is flexible" True
              | otherwise = False
 
 isVarType :: TermType -> Bool
-isVarType (VarType _) = True
-isVarType _           = False
+isVarType (Pi _ _) = False
+isVarType _           = True
 
 {-|
 Tries to non-deterministically solve an equation using projection or imitation.
@@ -343,14 +353,14 @@ generateLongBody variables head = foldM newArgVar head $ getTermType . Var <$> t
       traceM $ "newArgVar" ++ show tType
       let appliedMetavar =
             Data.Foldable.foldl
-            (\a b -> App a b (shiftType . getTermType $ a))
-            newMetavar
-            (Var <$> variables)
+              (\a b -> App a b (shiftType . getTermType $ a))
+              newMetavar
+              (Var <$> variables)
       return $ App body appliedMetavar $ shiftType . getTermType $ body
 
-    liftType tType = Data.Foldable.foldr Implication tType $ getTermType . Var <$> variables
+    liftType tType = Data.Foldable.foldr Pi tType $ getTermType . Var <$> variables
 
-    shiftType (Implication _ b) = b
+    shiftType (Pi _ b) = b
     shiftType t                 = t
 
 getAssumptionsAndGoal :: TermType -> ([Variable], TermType)
@@ -365,12 +375,12 @@ getMatchingTerms :: TermType -> [Term] -> [Term]
 getMatchingTerms goal = filter $ (goal ==) . getGoal . getTermType
 
 getGoal :: TermType -> TermType
-getGoal (Implication _ b) = getGoal b
+getGoal (Pi _ b) = getGoal b
 getGoal g                 = g
 
 foldr :: (TermType -> b -> b) -> b -> TermType -> b
-foldr fun initValue (Implication a b) = fun a $ Hou.HigherOrderUnification.foldr fun initValue b
-foldr fun initValue v@(VarType _) = fun v initValue
+foldr fun initValue (Pi a b) = fun a $ Hou.HigherOrderUnification.foldr fun initValue b
+foldr fun initValue v = fun v initValue
 
 isSolved :: [Equation] -> Bool
 isSolved [] = True
@@ -411,9 +421,9 @@ toLongNormalForm' v = do
         _                    -> v
   let body =
         Data.Foldable.foldl
-        (\b a -> let (Implication _ tType) = getTermType b in App b (toLongNormalForm' a) tType)
-        newVar
-        (Var <$> assumptions)
+          (\b a -> let (Pi _ tType) = getTermType b in App b (toLongNormalForm' a) tType)
+          newVar
+          (Var <$> assumptions)
   Data.Foldable.foldr (\a b -> Abs (getTermType a) b) body $ Var <$> assumptions
 
 normalize :: Term -> Term
@@ -453,15 +463,15 @@ getTermType (Constant (_, t)) = t
 getTermType (Var (_, t))      = t
 getTermType (FreeVar (_, t))  = t
 getTermType (App _ _ t)       = t
-getTermType (Abs t body)      = Implication t $ getTermType body
+getTermType (Abs t body)      = Pi t $ getTermType body
 
 isLongNormalForm :: Term -> Bool
 isLongNormalForm t = case getTermType t of
-  (VarType _) -> do
+  (Pi t1 t2) -> case t of
+    (Abs _ t3) -> isLongNormalForm t3
+    _          -> False
+  _ | isVarType t -> do
     let (head, apps) = getHead t
     case head of
       (Abs _ _) -> False
       _         -> and $ isLongNormalForm <$> apps
-  (Implication t1 t2) -> case t of
-    (Abs _ t3) -> isLongNormalForm t3
-    _          -> False

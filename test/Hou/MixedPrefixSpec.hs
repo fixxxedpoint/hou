@@ -116,7 +116,7 @@ spec = do
                             forall = [mv1, mv3], eqs = [(MetaVar mv1, mv2'), (mv2', MetaVar mv3), (MetaVar mv3, mv4')]
                             })
       mv2' `shouldBe` App (MetaVar mv2'Head) (MetaVar mv1) starType
-      mv4' `shouldBe` App (App (MetaVar mv4'Head) (MetaVar mv1) (Implication starType starType)) (MetaVar mv3) starType
+      mv4' `shouldBe` App (App (MetaVar mv4'Head) (MetaVar mv1) (Pi starType starType)) (MetaVar mv3) starType
 
   describe "toEquation on single equation" $ do
     it "should return a correct equation" $ do
@@ -127,29 +127,29 @@ spec = do
       let result1 =
             App
               (App
-                 (Abs (VarType 0) (Abs (VarType 0) (Abs (Implication (VarType 0) (VarType 1))
+                 (Abs (varType 0) (Abs (varType 0) (Abs (Pi (varType 0) (varType 1))
                    (App
-                     (Var (0,Implication (VarType 0) (VarType 1)))
-                     (Var (2,VarType 0))
-                     (VarType 1)))))
+                     (Var (0,Pi (varType 0) (varType 1)))
+                     (Var (2,varType 0))
+                     (varType 1)))))
                  (MetaVar mv1)
-                 (Implication (VarType 0) (Implication (Implication (VarType 0) (VarType 1)) (VarType 1)))
+                 (Pi (varType 0) (Pi (Pi (varType 0) (varType 1)) (varType 1)))
               )
               (MetaVar mv2)
-              (Implication (Implication (VarType 0) (VarType 1)) (VarType 1))
+              (Pi (Pi (varType 0) (varType 1)) (varType 1))
 
       let result2 =
             App
               (App
-                 (Abs (VarType 0) (Abs (VarType 0) (Abs (Implication (VarType 0) (VarType 1))
+                 (Abs (varType 0) (Abs (varType 0) (Abs (Pi (varType 0) (varType 1))
                    (App
-                     (Var (0,Implication (VarType 0) (VarType 1)))
-                     (Var (1,VarType 0))
-                     (VarType 1)))))
+                     (Var (0,Pi (varType 0) (varType 1)))
+                     (Var (1,varType 0))
+                     (varType 1)))))
                  (MetaVar mv1)
-                 (Implication (VarType 0) (Implication (Implication (VarType 0) (VarType 1)) (VarType 1)))
+                 (Pi (varType 0) (Pi (Pi (varType 0) (varType 1)) (varType 1)))
               )
               (MetaVar mv2)
-              (Implication (Implication (VarType 0) (VarType 1)) (VarType 1))
+              (Pi (Pi (varType 0) (varType 1)) (varType 1))
 
       toEquation formula `shouldBe` (result1, result2)
