@@ -12,26 +12,35 @@ License     : MIT, see the file LICENSE
 module Hou.LambdaPi where
 
 import           Hou.HigherOrderUnification as H
+import           Hou.Levels
 import           Hou.InferenceUtils         as IU
 import           Hou.MixedPrefix
 
 import           Control.Monad
 import           Control.Monad.Gen
+import           Data.FMList                as FML
 import           Data.Maybe
 
+import           Debug.Trace
 
-typeOf :: (Context c FreeVarName TermType, MonadGen MetaVariableName m, MonadPlus m)
+
+type PiTerm = Term
+
+type PiTermType = TermType
+
+typeOf :: (Context c FreeVarName PiTermType, MonadGen MetaVariableName m, MonadPlus m)
        => c
-       -> Term
-       -> m (TermType, [Equation])
+       -> PiTerm
+       -> m (PiTermType, [Equation])
 typeOf c t = case t of
-  FreeVar (varName, _) -> maybe mzero (\x -> return (x, [])) $ IU.lookup c varName
+  FreeVar (varName, _) -> trace ("free" ++ show varName) $ maybe mzero (\x -> trace ("typ: " ++ show x) $ return (x, [])) $ IU.lookup c varName
   App t1 t2 _ -> do
     (type1, c1) <- typeOf c t1
-    (type2, c2) <- typeOf c t1
+    (type2, c2) <- typeOf c t2
     case type1 of
-      Pi from to -> return (substitute t2 0 to, [(from, type2)] `mappend` c1 `mappend` c2)
+      Pi from to -> trace ("asdasd") $ return (substitute t2 0 to, [(from, type2)] `mappend` c1 `mappend` c2)
       _ -> do
+        traceM "o co cho?"
         m1 <- gen
         let arg = MetaVar (m1, starType)
         m2 <- gen
@@ -51,3 +60,16 @@ typeOf c t = case t of
     (to, cs) <- typeOf (IU.add c freeVarName mv) (substitute fv 0 body)
     return (Pi mv (substituteFV (Var (0, mv)) fvVal (H.raise 1 to)), [(mv, mv)] `mappend` cs)
   _ -> mzero
+
+solvePiTerm :: (Context c FreeVarName PiTermType) => c -> PiTerm -> [PiTermType]
+solvePiTerm c = FML.toList . solve' c
+
+solve' :: (Context c FreeVarName PiTermType) => c -> PiTerm -> FML.FMList PiTermType
+solve' c t = iterDepthDefault $ do
+  let genEnum = toEnum . (1 +) . maximum . (:) 0 . getMetaFreeVars $ t
+  (termType, equations) <- maybe mzero return . runGenTFrom genEnum $ typeOf c t
+  traceM $ show termType
+  traceM "---"
+  traceM $ show equations
+  solution <- unifyNonDeterministic equations createListSolution
+  return $ normalize $ apply solution termType

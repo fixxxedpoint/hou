@@ -32,7 +32,7 @@ module Hou.HigherOrderUnification(
   unifyNonDeterministic,
   createListSolution,
   normalize,
-  getMetaVars,
+  getMetaFreeVars,
   getMetavarId,
   getHead,
   substitute,
@@ -52,6 +52,8 @@ import           Control.Monad.Gen
 import qualified Data.FMList         as FML
 import           Data.Foldable
 import           Data.Maybe
+
+import qualified Debug.Trace
 
 
 type ConstantName = String
@@ -120,12 +122,16 @@ instance Solution ListSolution where
   emptySolution = createListSolution
 
   apply (LS []) t = trace "1" t
-  apply s (App t1 t2 appType) = trace "2" $ App (apply s t1) (apply s t2) appType
+  apply s (App t1 t2 appType) = trace "2" $ App (apply s t1) (apply s t2) (apply s appType)
   apply s (Abs absType term) = trace "3" $ Abs absType $ apply s term
-  apply (LS [(mv1, term)]) t@(MetaVar mv2) | mv1 == mv2 = trace "4.1" term
-                                           | otherwise = trace "4.2" t
-  apply (LS (s:rest)) t@(MetaVar _) = trace "5" $ apply (LS [s]) $ apply (LS rest) t
-  apply _ t = trace "6" t
+  apply s (Pi from to) = trace "4" $ Pi (apply s from) (apply s to)
+  apply s (Constant (name, tType)) = Constant (name, (apply s tType))
+  apply s (Var (name, tType)) = Var (name, (apply s tType))
+  apply s (FreeVar (name, tType)) = FreeVar (name, (apply s tType))
+  apply (LS [(mv1, term)]) t@(MetaVar mv2) | mv1 == mv2 = trace "5.1" term
+                                           | otherwise = trace "5.2" t
+  apply (LS (s:rest)) t@(MetaVar _) = trace "6" $ apply (LS [s]) $ apply (LS rest) t
+  apply _ t = trace "7" t
 
 {-|
 Preunification algorithm tries to solve a given list of equations, returning a solution when all of
@@ -144,7 +150,7 @@ producing a list of possible solutions.
 -}
 preunifyNonDeterministic :: (Solution s, NonDet n) => [Equation] -> s -> NonDeterministicT r n s
 preunifyNonDeterministic eqs s =
-  let nextEnum = toEnum . (1 +) . getMaxMetaVar $ eqs in
+  let nextEnum = toEnum . (1 +) . getMaxMetaFreeVar $ eqs in
   trace "preunifyNonD..." $ runGenTFrom nextEnum $ preunify eqs s
 
 preunify :: (Solution s, NonDet n)
@@ -193,7 +199,7 @@ unifyNonDeterministic :: (Solution s, NonDet n)
                       -> s
                       -> NonDeterministicT r n s
 unifyNonDeterministic eqs s =
-  let nextEnum = toEnum . (1 +) . getMaxMetaVar $ eqs in
+  let nextEnum = toEnum . (1 +) . getMaxMetaFreeVar $ eqs in
   trace "preunifyF..." $ runGenTFrom nextEnum $ unify eqs s
 
 unify :: (Solution s, NonDet n)
@@ -228,20 +234,22 @@ update mv term solution eqs = do
   let newSolution = add solution mv term
   (newSolution, newEquations)
 
-getMaxMetaVar :: [Equation] -> MetaVariableName
-getMaxMetaVar eqs =
-  maximum $ getMetavarId <$> concatMap getMetaVars [z | (x, y) <- eqs, z <- [x, y]]
+getMaxMetaFreeVar :: [Equation] -> MetaVariableName
+getMaxMetaFreeVar eqs =
+  maximum . (:) 0 $ concatMap getMetaFreeVars [z | (x, y) <- eqs, z <- [x, y]]
 
 getMetavarId :: MetaVariable -> MetaVariableName
 getMetavarId (ix, _) = ix
 
-getMetaVars :: Term -> [MetaVariable]
-getMetaVars t = getMetaVars' t []
-getMetaVars' :: Term -> [MetaVariable] -> [MetaVariable]
-getMetaVars' (MetaVar metaVar) r = metaVar : r
-getMetaVars' (App a b _) r       = getMetaVars' b $ getMetaVars' a r
-getMetaVars' (Abs _ body) r      = getMetaVars' body r
-getMetaVars' _ r                 = r
+getMetaFreeVars :: Term -> [MetaVariableName]
+getMetaFreeVars t = getMetaFreeVars' t []
+getMetaFreeVars' :: Term -> [MetaVariableName] -> [MetaVariableName]
+getMetaFreeVars' (MetaVar (metaVar, _)) r = metaVar : r
+getMetaFreeVars' (FreeVar (freeVar, _)) r = freeVar : r
+getMetaFreeVars' (App a b _) r       = getMetaFreeVars' b $ getMetaFreeVars' a r
+getMetaFreeVars' (Abs _ body) r      = getMetaFreeVars' body r
+getMetaFreeVars' (Pi from to) r      = getMetaFreeVars' to $ getMetaFreeVars' from r
+getMetaFreeVars' _ r                 = r
 
 simplify :: (MonadPlus m, MonadGen MetaVariableName m) => Equation -> m [Equation]
 simplify (t1, t2)
@@ -314,10 +322,11 @@ generateStep (flex, rigid) | isFlexible flex = do
   let availableTerms = (Constant <$> maybeToList headConstant) ++
                        (FreeVar <$> maybeToList headFreeVar) ++
                        (MetaVar <$> maybeToList headMetaVar)
-  traceM ("before generate: " ++ show headConstant)
+  traceM $ "before generate: " ++ show headConstant
   traceM $ "generateStep rigid: " ++ show rigid
   traceM $ "generateStep flex: " ++ show flex
   generatedTerm <- generate (getTermType flexTerm) availableTerms
+  traceM $ "generated term: " ++ show generatedTerm
   return (flexVariable, generatedTerm)
 generateStep _ = fail "first term of the equation is not flexible"
 
@@ -414,6 +423,7 @@ substituteFV new fv@(ix, fvType) term | fvType == getTermType new = case term of
   App a b termType -> App (substituteFV new fv a) (substituteFV new fv b) (substituteFV new fv termType)
   Abs termType a -> Abs (substituteFV new fv termType) (substituteFV (raise 1 new) fv a)
   Pi from to -> Pi (substituteFV new fv from) (substituteFV (raise 1 new) fv to)
+  _ -> term
 
 raise :: Int -> Term -> Term
 raise = raise' 0
@@ -483,6 +493,8 @@ getTermType (Var (_, t))      = t
 getTermType (FreeVar (_, t))  = t
 getTermType (App _ _ t)       = t
 getTermType (Abs t body)      = Pi t $ getTermType body
+getTermType Uni               = Uni
+getTermType pi@(Pi from to) = Pi (getTermType from) (getTermType to)
 
 isLongNormalForm :: Term -> Bool
 isLongNormalForm t = case getTermType t of

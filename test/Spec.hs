@@ -10,6 +10,7 @@ module Main where
 import           Test.Hspec
 
 import qualified Hou.HigherOrderUnificationSpec
+import qualified Hou.LambdaPiSpec
 import qualified Hou.LevelsSpec
 import qualified Hou.MixedPrefixSpec
 import qualified Hou.SystemFSpec
@@ -20,7 +21,8 @@ main = hspec spec
 
 spec :: Spec
 spec = do
-  describe "Levels" Hou.LevelsSpec.spec
   describe "HigherOrderUnification" Hou.HigherOrderUnificationSpec.spec
+  describe "LambdaPi" Hou.LambdaPiSpec.spec
+  describe "Levels" Hou.LevelsSpec.spec
   describe "MixedPrefix" Hou.MixedPrefixSpec.spec
   describe "SystemF" Hou.SystemFSpec.spec

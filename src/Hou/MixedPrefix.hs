@@ -67,7 +67,7 @@ toPrenexNormalForm form =
 -- TODO: for sake of simplicity consider to just use the fixed-point strategy
 raise :: (Solution s) => PrenexNormalForm -> s -> (RaisedNormalForm, s)
 raise f@PNF { body = b } s =
-  let nextEnum = toEnum . (1 +) . maximum $ getMetavarId <$> concatMap getMetaVars [z | (x, y) <- b, z <- [x, y]] in
+  let nextEnum = toEnum . (1 +) . maximum $ concatMap getMetaFreeVars [z | (x, y) <- b, z <- [x, y]] in
   runGenFrom nextEnum $ raise' f [] [] s
 
 raise' :: (MonadGen DeBruijnIndex m, Solution s) => PrenexNormalForm -> [MetaVariable] -> [MetaVariable] -> s -> m (RaisedNormalForm, s)

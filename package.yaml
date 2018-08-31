@@ -34,6 +34,8 @@ library:
   source-dirs: src
   exposed-modules:
     - Hou.HigherOrderUnification
+    - Hou.InferenceUtils
+    - Hou.LambdaPi
     - Hou.Levels
     - Hou.MixedPrefix
     - Hou.SystemF
