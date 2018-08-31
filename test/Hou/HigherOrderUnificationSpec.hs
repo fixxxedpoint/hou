@@ -20,7 +20,7 @@ normalize :: Spec
 normalize = do
   describe "normalize (\\lambda x . x) (\\lambda x . x)" $ do
     it "should return \\lambda x . x" $ do
-      let term = App (Abs (Pi (Pi someType someType) (Pi someType someType)) (Var (0, (Pi someType someType)))) (Abs someType (Var (0, someType))) (Pi someType someType)
+      let term = App (Abs (Abs (Abs someType someType) (Abs someType someType)) (Var (0, (Abs someType someType)))) (Abs someType (Var (0, someType))) (Abs someType someType)
 
       let result = Hou.HigherOrderUnification.normalize term
 
@@ -28,7 +28,7 @@ normalize = do
 
   describe "normalize (\\lambda x . \\lambda y . x) z" $ do
     it "should return \\lambda y . z" $ do
-      let term = App (Abs someType (Abs someType (Var (1, someType)))) (Var (2, someType)) (Pi someType someType)
+      let term = App (Abs someType (Abs someType (Var (1, someType)))) (Var (2, someType)) (Abs someType someType)
 
       let result = Hou.HigherOrderUnification.normalize term
 
@@ -47,7 +47,7 @@ preunify = do
 
   describe "preunify easy" $ do
     it "should create a substition for flex-rigid term" $ do
-      let term1 = MetaVar (0, Pi someType someType)
+      let term1 = MetaVar (0, Abs someType someType)
       let term2 = Abs someType $ Var (0, someType)
 
       let result = head $ preunifyAllSolutions [(term1, term2)] createListSolution
@@ -66,7 +66,7 @@ preunify = do
 
   describe "preunify simple implication" $ do
     it "should return proper substitution" $ do
-      let term1 = App (App (Constant ("->", Pi someType (Pi someType someType))) (FreeVar (0, someType)) (Pi someType someType)) (FreeVar (0, someType)) (someType)
+      let term1 = App (App (Constant ("->", Abs someType (Abs someType someType))) (FreeVar (0, someType)) (Abs someType someType)) (FreeVar (0, someType)) (someType)
       let term2 = MetaVar (0, someType)
       let equation = (term1, term2)
 

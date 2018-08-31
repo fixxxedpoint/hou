@@ -116,7 +116,7 @@ spec = do
                             forall = [mv1, mv3], eqs = [(MetaVar mv1, mv2'), (mv2', MetaVar mv3), (MetaVar mv3, mv4')]
                             })
       mv2' `shouldBe` App (MetaVar mv2'Head) (MetaVar mv1) starType
-      mv4' `shouldBe` App (App (MetaVar mv4'Head) (MetaVar mv1) (Pi starType starType)) (MetaVar mv3) starType
+      mv4' `shouldBe` App (App (MetaVar mv4'Head) (MetaVar mv1) (Abs starType starType)) (MetaVar mv3) starType
 
   describe "toEquation on single equation" $ do
     it "should return a correct equation" $ do
@@ -127,29 +127,29 @@ spec = do
       let result1 =
             App
               (App
-                 (Abs (starType) (Abs (starType) (Abs (Pi (starType) (someType))
+                 (Abs (starType) (Abs (starType) (Abs (Abs (starType) (someType))
                    (App
-                     (Var (0,Pi (starType) (someType)))
+                     (Var (0,Abs (starType) (someType)))
                      (Var (2,starType))
                      (someType)))))
                  (MetaVar mv1)
-                 (Pi (starType) (Pi (Pi (starType) (someType)) (someType)))
+                 (Abs (starType) (Abs (Abs (starType) (someType)) (someType)))
               )
               (MetaVar mv2)
-              (Pi (Pi (starType) (someType)) (someType))
+              (Abs (Abs (starType) (someType)) (someType))
 
       let result2 =
             App
               (App
-                 (Abs (starType) (Abs (starType) (Abs (Pi (starType) (someType))
+                 (Abs (starType) (Abs (starType) (Abs (Abs (starType) (someType))
                    (App
-                     (Var (0,Pi (starType) (someType)))
+                     (Var (0,Abs (starType) (someType)))
                      (Var (1,starType))
                      (someType)))))
                  (MetaVar mv1)
-                 (Pi (starType) (Pi (Pi (starType) (someType)) (someType)))
+                 (Abs (starType) (Abs (Abs (starType) (someType)) (someType)))
               )
               (MetaVar mv2)
-              (Pi (Pi (starType) (someType)) (someType))
+              (Abs (Abs (starType) (someType)) (someType))
 
       toEquation formula `shouldBe` (result1, result2)

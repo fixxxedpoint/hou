@@ -97,7 +97,7 @@ newMetaVariable = do
   return (newVar, H.starType)
 
 forAll :: H.Term -> H.Term
-forAll t | H.getTermType t == H.Pi H.starType H.starType = H.App (H.Constant ("∀", H.Pi (H.Pi H.starType H.starType) H.starType)) t H.starType
+forAll t | H.getTermType t == H.Abs H.starType H.starType = H.App (H.Constant ("∀", H.Abs (H.Abs H.starType H.starType) H.starType)) t H.starType
 
 {-|
 Main function of this module. It translates a problem of typing of a term of SystemF  onto
@@ -134,7 +134,7 @@ translate ctx t tType = case t of
     beta <- newMetaVariable
     let betaTerm = fromMaybe (H.MetaVar beta) $ toTermType <$> termType
     vName <- gen
-    let v = (vName, H.Pi H.starType H.starType)
+    let v = (vName, H.Abs H.starType H.starType)
     let vMetaVar = H.MetaVar v
     Exists beta . Exists v .
       And
@@ -143,7 +143,7 @@ translate ctx t tType = case t of
 
   (TypeAbs name term) -> do
     newVar <- gen
-    let v = (newVar, H.Pi H.starType H.starType)
+    let v = (newVar, H.Abs H.starType H.starType)
     let vMetaVar = H.MetaVar v
     phi <- fromMaybe newMetaVariable $ (\n -> return (n, H.starType)) <$> name
     Exists v .

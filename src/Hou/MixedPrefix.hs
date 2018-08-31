@@ -34,6 +34,7 @@ import qualified Data.FMList                as FML
 import           Data.Functor.Identity
 import           Prelude                    hiding (head)
 
+
 {-|
 Represents a formula of higher-order unification with possible mixed quantifiers.
 -}
@@ -79,10 +80,10 @@ raise' (PNF (QForAll var : rest) body) forall exists s =
   raise' (PNF rest body) (var : forall) exists s
 raise' (PNF (QExists var : rest) body) forall exists s = do
   let varType = getTermType $ MetaVar var
-  let newType = foldl (\b a -> Pi (getTermType $ MetaVar a) b) varType forall
+  let newType = foldl (\b a -> Abs (getTermType $ MetaVar a) b) varType forall
   newMetavarName <- gen
   let newMetavar = (newMetavarName, newType)
-  let newVar = foldr (\a b -> let (Pi _ r) = getTermType b in App b a r) (MetaVar newMetavar) $ MetaVar <$> forall
+  let newVar = foldr (\a b -> let (Abs _ r) = getTermType b in App b a r) (MetaVar newMetavar) $ MetaVar <$> forall
   let newSubstitution = add s var newVar
   raise' (PNF rest body) forall (newMetavar : exists) newSubstitution
 raise' (PNF [] body) forall exists s = do
@@ -111,15 +112,15 @@ unification problem.
 toEquation :: RaisedNormalForm -> Equation
 toEquation RNF { exists = e, forall = f, eqs = eq } = runIdentity $ do
   let zReturnType = someType
-  let zType = foldr Pi zReturnType $ (getTermType . fst) <$> eq
+  let zType = foldr Abs zReturnType $ (getTermType . fst) <$> eq
   let zVar = Var (0, zType)
 
-  let bodyBuilder = foldl (\b a -> let (Pi _ bT) = getTermType b in App b a bT) zVar
+  let bodyBuilder = foldl (\b a -> let (Abs _ bT) = getTermType b in App b a bT) zVar
   let m1 = bodyBuilder $ fst <$> eq
   let m2 = bodyBuilder $ snd <$> eq
 
   let lambdaBuilder for m = trace ("lambdas: " ++ show m) $ foldr abstractMetavariable m for
-  let appBuilder terms m = trace ("builder2: " ++ show m) $ foldl (\b a -> let (Pi _ bT) = getTermType b in trace ("builder: " ++ show (getTermType b)) $ App b a bT) m $ MetaVar <$> terms
+  let appBuilder terms m = trace ("builder2: " ++ show m) $ foldl (\b a -> let (Abs _ bT) = getTermType b in trace ("builder: " ++ show (getTermType b)) $ App b a bT) m $ MetaVar <$> terms
   let resultBuilder es fs = appBuilder es . lambdaBuilder es . lambdaBuilder fs . Abs zType
 
   let m1Result = resultBuilder e f m1
