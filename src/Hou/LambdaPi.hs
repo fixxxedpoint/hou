@@ -56,52 +56,26 @@ typeOf' :: (Context c FreeVarName PiTermType, MonadGen MetaVariableName m, Monad
        -> m (PiTermType, [Equation])
 typeOf' c t = case t of
   FreeVar (varName, _) -> trace ("free" ++ show varName) $ maybe mzero (\x -> trace ("typ: " ++ show x) $ return (x, [])) $ IU.lookup c varName
-  -- App t1 t2 _ -> do
-  --   (type1, c1) <- typeOf c t1
-  --   (type2, c2) <- typeOf c t2
-  --   case type1 of
-  --     Pi from to -> trace ("asdasd") $ return (substitute t2 0 to, [(from, type2)] `mappend` c1 `mappend` c2)
-  --     _ -> do
-  --       traceM "o co cho?"
-  --       m1 <- gen
-  --       let arg = MetaVar (m1, starType)
-  --       m2 <- gen
-  --       let result = MetaVar (m2, Pi arg starType)
-  --       return (App result t2 starType,
-  --                [
-  --                  (type1, Pi arg (App result (Var (0, arg)) starType)),
-  --                  (type2, arg)
-  --                ] `mappend` c1 `mappend` c2
-  --              )
+
   App t1 t2 _ -> do
     (type1, c1) <- typeOf' c t1
     (type2, c2) <- typeOf' c t2
     case type1 of
-      Abs from to -> trace ("asdasd") $ return (substituteWT t2 0 to, [(from, type2)] `mappend` c1 `mappend` c2)
+      Abs from to -> return (substituteWT t2 0 to, [(from, type2)] `mappend` c1 `mappend` c2)
       _ -> do
-        traceM "o co cho?"
         m1 <- gen
-        -- m1Result <- gen
-        let arg = MetaVar (m1, starType) -- MetaVar (m1Result, starType))
+        let arg = MetaVar (m1, starType)
         m2 <- gen
         m3 <- gen
-        -- m3Result <- gen
-        let returnType = MetaVar (m3, starType) -- MetaVar (m3Result, starType))
+        let returnType = MetaVar (m3, starType)
         let result = MetaVar (m2, Abs arg returnType)
-        return (App result t2 starType,
+        return (App result t2 returnType,
                  [
                    (type1, Abs arg (App result (Var (0, arg)) returnType)),
                    (type2, arg)
                  ] `mappend` c1 `mappend` c2
                )
-  -- Abs _ body -> do
-  --   freeVarName <- gen
-  --   mvName <- gen
-  --   let mv = MetaVar (mvName, starType)
-  --   let fvVal = (freeVarName, mv)
-  --   let fv = FreeVar fvVal
-  --   (to, cs) <- typeOf (IU.add c freeVarName mv) (substitute fv 0 body)
-  --   return (Pi mv (substituteFV (Var (0, mv)) fvVal (H.raise 1 to)), [(mv, mv)] `mappend` cs)
+
   Abs _ body -> do
     freeVarName <- gen
     mvName <- gen
@@ -110,6 +84,14 @@ typeOf' c t = case t of
     let fv = FreeVar fvVal
     (to, cs) <- typeOf' (IU.add c freeVarName mv) (substituteWT fv 0 body)
     return (Abs mv (substituteFV (Var (0, mv)) fvVal (H.raise 1 to)), [(mv, mv)] `mappend` cs)
+  -- Abs _ body -> do
+  --   freeVarName <- gen
+  --   mvName <- gen
+  --   let mv = MetaVar (mvName, starType)
+  --   let fvVal = (freeVarName, mv)
+  --   let fv = FreeVar fvVal
+  --   (to, cs) <- typeOf' (IU.add c freeVarName mv) (substituteWT fv 0 body)
+  --   return (Abs mv (substituteFV (Var (0, mv)) fvVal (H.raise 1 to)), [(mv, mv)] `mappend` cs)
   _ -> mzero
 
 solvePiTerm :: (Context c FreeVarName PiTermType) => c -> PiTerm -> [PiTermType]

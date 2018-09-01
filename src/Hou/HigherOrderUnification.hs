@@ -76,11 +76,9 @@ type FreeVariable = (FreeVarName, TermType)
 
 starType :: TermType
 starType = Constant ("*", Constant ("[]", Uni))
--- starType = FreeVar (0, Uni)
 
 someType :: TermType
 someType = Constant ("a", starType)
--- someType = FreeVar (1, Uni)
 
 varType :: Int -> TermType
 varType name = FreeVar (name, Uni)
@@ -92,9 +90,7 @@ data Term =
   FreeVar FreeVariable |
   App Term Term TermType |
   Abs TermType Term |
-  Uni -- |
-  -- Pi TermType Term
-  -- Pi Term Term
+  Uni
   deriving (Eq, Read, Show)
 
 type TermType = Term
@@ -122,16 +118,8 @@ instance Solution ListSolution where
   emptySolution = createListSolution
 
   apply (LS []) t = trace "1" t
-  -- apply s (App t1 t2 appType) = trace "2" $ App (apply s t1) (apply s t2) (apply s appType)
   apply s (App t1 t2 appType) = trace "2" $ App (apply s t1) (apply s t2) appType
-  -- apply s (Abs absType term) = trace "3" $ Abs (apply s absType) $ apply s term
   apply s (Abs absType term) = trace "3" $ Abs absType $ apply s term
-  -- apply s (Pi from to) = trace "4" $ Pi (apply s from) (apply s to)
-  -- apply s (Constant (name, tType)) = Constant (name, (apply s tType))
-  -- apply s (Var (name, tType)) = Var (name, (apply s tType))
-  -- apply s (FreeVar (name, tType)) = FreeVar (name, (apply s tType))
-  -- apply s@(LS [(mv1@(mv1Name, _), term)]) t@(MetaVar mv2@(mv2Name, tType)) | mv1Name == mv2Name = trace "5.1" term
-  --                                                          | otherwise = trace "5.2" $ MetaVar (mv2Name, apply s tType)
   apply s@(LS [(mv1@(mv1Name, _), term)]) t@(MetaVar mv2@(mv2Name, tType)) | mv1Name == mv2Name = trace "5.1" term
                                                                            | otherwise = trace "5.2" t
   apply (LS (s:rest)) t@(MetaVar _) = trace "6" $ apply (LS [s]) $ apply (LS rest) t
@@ -170,20 +158,11 @@ preunify' :: (Solution s, NonDet n)
           -> GenT MetaVariableName (NonDeterministicT r n) s
 preunify' [] solution = trace "preunify []" $ return solution
 preunify' equations solution = interrupt $ callCC $ \exit -> do
-  -- Debug.Trace.traceM $ "preunify: " ++ show equations
   simplified <- fixPointOfSimplify $ (normalize *** normalize) <$> equations
-  -- let notInLongNormalForm = filter (not . isLongNormalForm) [x | (a, b) <- simplified, x <- [a, b]]
-  -- Debug.Trace.traceM $ "not in long normal form: " ++ show notInLongNormalForm
-  -- Debug.Trace.traceM $ "is long normal form: " ++ show (and (isLongNormalForm <$> [x | (a, b) <- simplified, x <- [a, b]]))
-  -- Debug.Trace.traceM ("preunify2: " ++ show simplified)
-  traceM ("preunify3: " ++ show (isSolved simplified))
-  -- Debug.Trace.traceM ("preunify3: " ++ show (isSolved simplified))
   when (isSolved simplified) $ exit solution
-  traceM "preunify4"
   let flexRigid = head . filter (\(a, b) -> isFlexible a && isRigid b) $ simplified
   (mv, term) <- generateStep flexRigid
   let (newSolution, newEquations) = update mv term solution simplified
-  -- Debug.Trace.traceM ("preuniy5: " ++ show newEquations)
   preunify' newEquations newSolution
 
 {-|
@@ -222,12 +201,9 @@ unify' :: (Solution s, NonDet n)
        -> s
        -> GenT MetaVariableName (NonDeterministicT r n) s
 unify' equations solution = interrupt $ callCC $ \exit -> do
-  traceM ("unify: " ++ show equations)
   simplified <- fixPointOfSimplify $ (normalize *** normalize) <$> equations
-  -- Debug.Trace.traceM ("unify2: " ++ show simplified)
   traceM ("unify3: " ++ show (isSolved simplified))
   when (null simplified) $ exit solution
-  traceM $ "unify4: " ++ show simplified
   (mv, term) <- generateStep (head simplified)
   let (newSolution, newEquations) = update mv term solution simplified
   unify' newEquations newSolution
@@ -255,7 +231,6 @@ getMetaFreeVars' (MetaVar (metaVar, _)) r = metaVar : r
 getMetaFreeVars' (FreeVar (freeVar, _)) r = freeVar : r
 getMetaFreeVars' (App a b _) r       = getMetaFreeVars' b $ getMetaFreeVars' a r
 getMetaFreeVars' (Abs _ body) r      = getMetaFreeVars' body r
--- getMetaFreeVars' (Pi from to) r      = getMetaFreeVars' to $ getMetaFreeVars' from r
 getMetaFreeVars' _ r                 = r
 
 simplify :: (MonadPlus m, MonadGen MetaVariableName m) => Equation -> m [Equation]
@@ -264,36 +239,21 @@ simplify (t1, t2)
   | (Abs type1 a) <- t1,
     (Abs type2 b) <- t2 = do
     -- type1 == type2 = do
-      -- Debug.Trace.traceM "ABS"
       newVar <- gen
-      traceM $ "simplify Abs: " ++ show t1 ++ " --- " ++ show t2 ++ " --- " ++ show newVar
       let newCons = FreeVar (newVar, type1)
       let newA = substitute newCons 0 a
       let newB = substitute newCons 0 b
-      traceM $ "simplify Abs2: " ++ show newA ++ " --- " ++ show newB
-      -- simplify (newA, newB)
-      -- Debug.Trace.traceM $ "ABS: " ++ show (getTermType newA) ++ "---" ++ show (getTermType newB)
-      -- return [(getTermType newA, getTermType newB), (type1, type2), (newA, newB)]
-      -- return [(type1, type2), (newA, newB)]
-      return [(newA, newB)]
+      simplify (newA, newB)
+      -- return [(newA, newB)]
   | (c1, ctx1) <- getHead t1,
     (c2, ctx2) <- getHead t2,
     isFreeVarOrConstant c1 && isFreeVarOrConstant c2 = do
-      traceM "simplify deeper"
       guard (c1 == c2) -- this can fail the whole process
       fold <$> mapM simplify (zip ctx1 ctx2) -- faster than using fixPointOfSimplify
-  -- | (Pi type1 body1) <- t1,
-  --   (Pi type2 body2) <- t2 = do
-  --     newVar <- gen
-  --     let newCons = FreeVar (newVar, type1)
-  --     let newBody1 = substitute newCons 0 body1
-  --     let newBody2 = substitute newCons 0 body2
-  --     return [(type1, type2), (newBody1, newBody2)]
   | isRigid t1 && isFlexible t2 = trace "rigid-flex" $ return [(t2, t1)]
   -- | isFlexible t1 && isRigid t2 = Debug.Trace.trace ("flex-rigid: " ++ show t1 ++ " --- " ++ show t2) $ return [(getTermType t1, getTermType t2), (t1, t2)]
   | isFlexible t1 && isRigid t2 = trace ("flex-rigid: " ++ show t1 ++ " --- " ++ show t2) $ return [(t1, t2)]
   | isFlexible t1 && isFlexible t2 = trace "flex-flex" $ return [(t1, t2)]
-  -- | otherwise = Debug.Trace.trace ("otherwise: " ++ show t1 ++ "---" ++ show t2) mzero
   | otherwise = trace ("otherwise: " ++ show t1 ++ "---" ++ show t2) mzero
 
 fixPointOfSimplify :: (MonadPlus m, MonadGen MetaVariableName m) => [Equation] -> m [Equation]
@@ -316,7 +276,6 @@ isFlexible t | (MetaVar _, _) <- getHead t = trace "is flexible" True
              | otherwise = False
 
 isVarType :: TermType -> Bool
--- isVarType (Pi _ _) = False
 isVarType (Abs _ _) = False
 isVarType _           = True
 
@@ -341,10 +300,10 @@ generateStep (flex, rigid) | isFlexible flex = do
   -- TODO add posibility to return a Pi term
   traceM $ "before generate: " ++ show headConstant
   -- Debug.Trace.traceM $ "before generate: " ++ show headConstant
-  Debug.Trace.traceM $ "generateStep rigid: " ++ show rigid
+  -- Debug.Trace.traceM $ "generateStep rigid: " ++ show rigid
   -- Debug.Trace.traceM $ "generateStep flex: " ++ show flex
   generatedTerm <- generate (getTermType flexTerm) availableTerms
-  Debug.Trace.traceM $ "generated term: " ++ show flexVariable ++ "---" ++ show generatedTerm
+  -- Debug.Trace.traceM $ "generated term: " ++ show flexVariable ++ "---" ++ show generatedTerm
   return (flexVariable, generatedTerm)
 -- generateStep (t1, t2) = fail $ "first term of the equation is not flexible: " ++ show t1 ++ "---" ++ show t2
 generateStep (t1, t2) = Debug.Trace.traceStack "fail" $ fail $ "first term of the equation is not flexible: " ++ show t1 ++ "---" ++ show t2
@@ -361,21 +320,15 @@ generate varType availableTerms = do
   let matchingAssumptions = getMatchingTerms goal $ Var <$> assumptions
   let matchingTerms = getMatchingTerms goal availableTerms
   traceM $ "matching var type: " ++ show varType
-  Debug.Trace.traceM $ "matching var type: " ++ show varType
-  Debug.Trace.traceM $ "available terms: " ++ show availableTerms
+  -- Debug.Trace.traceM $ "matching var type: " ++ show varType
+  -- Debug.Trace.traceM $ "available terms: " ++ show availableTerms
   traceM $ "Matching assumptions: " ++ show matchingAssumptions
   traceM $ "Matching terms: " ++ show matchingTerms
   traceM ("generate: " ++ show matchingAssumptions)
-  -- newMetaName <- gen
-  -- newMetaResultName <- gen
-  -- let newMeta = MetaVar (newMetaName, changeGoal varType (MetaVar (newMetaResultName, Uni)))
   head <- anyOf $ matchingAssumptions ++ matchingTerms -- ++ [newMeta]
   traceM $ "generate head: " ++ show head ++ " --- " ++ show matchingAssumptions ++ " --- " ++ show matchingTerms
   result <- generateLongTerm assumptions head
   traceM ("generate result: " ++ show result)
-  -- if toLongNormalForm result /= result then Debug.Trace.traceM $ show result ++
-  --   " --- " ++ show (toLongNormalForm result)
-  --   else return ()
   return $ toLongNormalForm result
 
 generateLongTerm :: (MonadGen MetaVariableName m) => [Variable] -> Term -> m Term
@@ -442,7 +395,6 @@ substitute new index term = case term of
   App a b termType -> App (substitute new index a) (substitute new index b) termType
   Abs termType a -> Abs termType (substitute (raise 1 new) (index+1) a)
   -- Abs termType a -> Abs (substitute new index termType) (substitute (raise 1 new) (index+1) a)
-  -- Pi from to -> Pi (substitute new index from) (substitute (raise 1 new) (index+1) to)
   _ -> term
 
 substituteFV :: Term -> FreeVariable -> Term -> Term
@@ -450,7 +402,6 @@ substituteFV new fv@(ix, fvType) term | fvType == getTermType new = case term of
   FreeVar (ix2, fvType2) | fvType2 == fvType, ix == ix2 -> new
   App a b termType -> App (substituteFV new fv a) (substituteFV new fv b) (substituteFV new fv termType)
   Abs termType a -> Abs (substituteFV new fv termType) (substituteFV (raise 1 new) fv a)
-  -- Pi from to -> Pi (substituteFV new fv from) (substituteFV (raise 1 new) fv to)
   _ -> term
 
 raise :: Int -> Term -> Term
@@ -461,7 +412,6 @@ raise = raise' 0
                                                 else v
           App l r tType -> App (raise' lower by l) (raise' lower by r) tType
           Abs varType body -> Abs varType (raise' (lower + 1) by body)
-          -- Pi from to -> Pi (raise' lower by from) (raise' (lower + 1) by to)
           v -> v
 
 toLongNormalForm :: Term -> Term
@@ -484,7 +434,6 @@ toLongNormalForm' v = do
           (Var <$> assumptions)
   Data.Foldable.foldr (\a b -> Abs (getTermType a) b) body $ Var <$> assumptions
 
--- FIXME: terms can be non normalizing due to unification in LambdaPi!
 normalize :: Term -> Term
 normalize t = case t of
   App l r tType -> case normalize l of
@@ -525,8 +474,6 @@ getTermType (FreeVar (_, t))  = t
 getTermType (App _ _ t)       = t
 getTermType (Abs t body)      = Abs t $ getTermType body -- Pi t $ getTermType body
 getTermType Uni               = Uni
--- getTermType (Pi _ _)          = Uni
--- getTermType pi@(Pi from to)   = Pi (getTermType from) (getTermType to)
 
 isLongNormalForm :: Term -> Bool
 isLongNormalForm t = case getTermType t of
