@@ -122,14 +122,18 @@ instance Solution ListSolution where
   emptySolution = createListSolution
 
   apply (LS []) t = trace "1" t
-  apply s (App t1 t2 appType) = trace "2" $ App (apply s t1) (apply s t2) (apply s appType)
-  apply s (Abs absType term) = trace "3" $ Abs (apply s absType) $ apply s term
+  -- apply s (App t1 t2 appType) = trace "2" $ App (apply s t1) (apply s t2) (apply s appType)
+  apply s (App t1 t2 appType) = trace "2" $ App (apply s t1) (apply s t2) appType
+  -- apply s (Abs absType term) = trace "3" $ Abs (apply s absType) $ apply s term
+  apply s (Abs absType term) = trace "3" $ Abs absType $ apply s term
   -- apply s (Pi from to) = trace "4" $ Pi (apply s from) (apply s to)
-  apply s (Constant (name, tType)) = Constant (name, (apply s tType))
-  apply s (Var (name, tType)) = Var (name, (apply s tType))
-  apply s (FreeVar (name, tType)) = FreeVar (name, (apply s tType))
+  -- apply s (Constant (name, tType)) = Constant (name, (apply s tType))
+  -- apply s (Var (name, tType)) = Var (name, (apply s tType))
+  -- apply s (FreeVar (name, tType)) = FreeVar (name, (apply s tType))
+  -- apply s@(LS [(mv1@(mv1Name, _), term)]) t@(MetaVar mv2@(mv2Name, tType)) | mv1Name == mv2Name = trace "5.1" term
+  --                                                          | otherwise = trace "5.2" $ MetaVar (mv2Name, apply s tType)
   apply s@(LS [(mv1@(mv1Name, _), term)]) t@(MetaVar mv2@(mv2Name, tType)) | mv1Name == mv2Name = trace "5.1" term
-                                                           | otherwise = trace "5.2" $ MetaVar (mv2Name, apply s tType)
+                                                                           | otherwise = trace "5.2" t
   apply (LS (s:rest)) t@(MetaVar _) = trace "6" $ apply (LS [s]) $ apply (LS rest) t
   apply _ t = trace "7" t
 
@@ -166,12 +170,12 @@ preunify' :: (Solution s, NonDet n)
           -> GenT MetaVariableName (NonDeterministicT r n) s
 preunify' [] solution = trace "preunify []" $ return solution
 preunify' equations solution = interrupt $ callCC $ \exit -> do
-  Debug.Trace.traceM $ "preunify: " ++ show equations
+  -- Debug.Trace.traceM $ "preunify: " ++ show equations
   simplified <- fixPointOfSimplify $ (normalize *** normalize) <$> equations
   -- let notInLongNormalForm = filter (not . isLongNormalForm) [x | (a, b) <- simplified, x <- [a, b]]
   -- Debug.Trace.traceM $ "not in long normal form: " ++ show notInLongNormalForm
   -- Debug.Trace.traceM $ "is long normal form: " ++ show (and (isLongNormalForm <$> [x | (a, b) <- simplified, x <- [a, b]]))
-  Debug.Trace.traceM ("preunify2: " ++ show simplified)
+  -- Debug.Trace.traceM ("preunify2: " ++ show simplified)
   traceM ("preunify3: " ++ show (isSolved simplified))
   -- Debug.Trace.traceM ("preunify3: " ++ show (isSolved simplified))
   when (isSolved simplified) $ exit solution
@@ -179,7 +183,7 @@ preunify' equations solution = interrupt $ callCC $ \exit -> do
   let flexRigid = head . filter (\(a, b) -> isFlexible a && isRigid b) $ simplified
   (mv, term) <- generateStep flexRigid
   let (newSolution, newEquations) = update mv term solution simplified
-  Debug.Trace.traceM ("preuniy5: " ++ show newEquations)
+  -- Debug.Trace.traceM ("preuniy5: " ++ show newEquations)
   preunify' newEquations newSolution
 
 {-|
@@ -220,7 +224,7 @@ unify' :: (Solution s, NonDet n)
 unify' equations solution = interrupt $ callCC $ \exit -> do
   traceM ("unify: " ++ show equations)
   simplified <- fixPointOfSimplify $ (normalize *** normalize) <$> equations
-  traceM ("unify2: " ++ show simplified)
+  -- Debug.Trace.traceM ("unify2: " ++ show simplified)
   traceM ("unify3: " ++ show (isSolved simplified))
   when (null simplified) $ exit solution
   traceM $ "unify4: " ++ show simplified
@@ -234,7 +238,8 @@ update mv term solution eqs = do
   let newEquations = (apply thisSolution *** apply thisSolution) <$> eqs
   let newSolution = add solution mv term
   -- FIXME: verify this
-  (newSolution, (getTermType (MetaVar mv), getTermType term) : newEquations)
+  -- (newSolution, (getTermType (MetaVar mv), getTermType term) : newEquations)
+  (newSolution, newEquations)
 
 getMaxMetaFreeVar :: [Equation] -> MetaVariableName
 getMaxMetaFreeVar eqs =
@@ -259,7 +264,7 @@ simplify (t1, t2)
   | (Abs type1 a) <- t1,
     (Abs type2 b) <- t2 = do
     -- type1 == type2 = do
-      Debug.Trace.traceM "ABS"
+      -- Debug.Trace.traceM "ABS"
       newVar <- gen
       traceM $ "simplify Abs: " ++ show t1 ++ " --- " ++ show t2 ++ " --- " ++ show newVar
       let newCons = FreeVar (newVar, type1)
@@ -267,7 +272,10 @@ simplify (t1, t2)
       let newB = substitute newCons 0 b
       traceM $ "simplify Abs2: " ++ show newA ++ " --- " ++ show newB
       -- simplify (newA, newB)
-      return [(newA, newB), (type1, type2)]
+      -- Debug.Trace.traceM $ "ABS: " ++ show (getTermType newA) ++ "---" ++ show (getTermType newB)
+      -- return [(getTermType newA, getTermType newB), (type1, type2), (newA, newB)]
+      -- return [(type1, type2), (newA, newB)]
+      return [(newA, newB)]
   | (c1, ctx1) <- getHead t1,
     (c2, ctx2) <- getHead t2,
     isFreeVarOrConstant c1 && isFreeVarOrConstant c2 = do
@@ -282,9 +290,11 @@ simplify (t1, t2)
   --     let newBody2 = substitute newCons 0 body2
   --     return [(type1, type2), (newBody1, newBody2)]
   | isRigid t1 && isFlexible t2 = trace "rigid-flex" $ return [(t2, t1)]
+  -- | isFlexible t1 && isRigid t2 = Debug.Trace.trace ("flex-rigid: " ++ show t1 ++ " --- " ++ show t2) $ return [(getTermType t1, getTermType t2), (t1, t2)]
   | isFlexible t1 && isRigid t2 = trace ("flex-rigid: " ++ show t1 ++ " --- " ++ show t2) $ return [(t1, t2)]
   | isFlexible t1 && isFlexible t2 = trace "flex-flex" $ return [(t1, t2)]
-  | otherwise = Debug.Trace.trace ("otherwise: " ++ show t1 ++ "---" ++ show t2) mzero
+  -- | otherwise = Debug.Trace.trace ("otherwise: " ++ show t1 ++ "---" ++ show t2) mzero
+  | otherwise = trace ("otherwise: " ++ show t1 ++ "---" ++ show t2) mzero
 
 fixPointOfSimplify :: (MonadPlus m, MonadGen MetaVariableName m) => [Equation] -> m [Equation]
 fixPointOfSimplify cs = do
@@ -324,18 +334,23 @@ generateStep (flex, rigid) | isFlexible flex = do
   let headConstant = getHeadConstant rigid
   let headFreeVar = getHeadFreeVar rigid
   let headMetaVar = getHeadMetaVar rigid
+  -- FIXME: add possibility to generate a lambda abstraction
   let availableTerms = (Constant <$> maybeToList headConstant) ++
                        (FreeVar <$> maybeToList headFreeVar) ++
                        (MetaVar <$> maybeToList headMetaVar)
   -- TODO add posibility to return a Pi term
   traceM $ "before generate: " ++ show headConstant
-  Debug.Trace.traceM $ "before generate: " ++ show headConstant
-  traceM $ "generateStep rigid: " ++ show rigid
-  traceM $ "generateStep flex: " ++ show flex
+  -- Debug.Trace.traceM $ "before generate: " ++ show headConstant
+  Debug.Trace.traceM $ "generateStep rigid: " ++ show rigid
+  -- Debug.Trace.traceM $ "generateStep flex: " ++ show flex
   generatedTerm <- generate (getTermType flexTerm) availableTerms
   Debug.Trace.traceM $ "generated term: " ++ show flexVariable ++ "---" ++ show generatedTerm
   return (flexVariable, generatedTerm)
-generateStep _ = fail "first term of the equation is not flexible"
+-- generateStep (t1, t2) = fail $ "first term of the equation is not flexible: " ++ show t1 ++ "---" ++ show t2
+generateStep (t1, t2) = Debug.Trace.traceStack "fail" $ fail $ "first term of the equation is not flexible: " ++ show t1 ++ "---" ++ show t2
+
+changeGoal (Abs a b) goal = Abs a (changeGoal b goal)
+changeGoal _ goal = goal
 
 generate :: (MonadPlus m, MonadGen MetaVariableName m)
          => TermType
@@ -346,10 +361,15 @@ generate varType availableTerms = do
   let matchingAssumptions = getMatchingTerms goal $ Var <$> assumptions
   let matchingTerms = getMatchingTerms goal availableTerms
   traceM $ "matching var type: " ++ show varType
+  Debug.Trace.traceM $ "matching var type: " ++ show varType
+  Debug.Trace.traceM $ "available terms: " ++ show availableTerms
   traceM $ "Matching assumptions: " ++ show matchingAssumptions
   traceM $ "Matching terms: " ++ show matchingTerms
   traceM ("generate: " ++ show matchingAssumptions)
-  head <- anyOf $ matchingAssumptions ++ matchingTerms
+  -- newMetaName <- gen
+  -- newMetaResultName <- gen
+  -- let newMeta = MetaVar (newMetaName, changeGoal varType (MetaVar (newMetaResultName, Uni)))
+  head <- anyOf $ matchingAssumptions ++ matchingTerms -- ++ [newMeta]
   traceM $ "generate head: " ++ show head ++ " --- " ++ show matchingAssumptions ++ " --- " ++ show matchingTerms
   result <- generateLongTerm assumptions head
   traceM ("generate result: " ++ show result)
@@ -388,7 +408,7 @@ generateLongBody variables head = foldM newArgVar head $ getTermType . Var <$> t
     liftType tType = Data.Foldable.foldr Abs tType $ getTermType . Var <$> variables
 
     shiftType (Abs _ b) = b
-    shiftType t                 = t
+    shiftType t         = t
 
 getAssumptionsAndGoal :: TermType -> ([Variable], TermType)
 getAssumptionsAndGoal t =
@@ -399,7 +419,7 @@ getAssumptionsAndGoal t =
         newDeBruijnIndex ((ix, _):_) = ix + 1
 
 getMatchingTerms :: TermType -> [Term] -> [Term]
-getMatchingTerms goal = id -- filter $ (goal ==) . getGoal . getTermType
+getMatchingTerms goal = filter $ (goal ==) . getGoal . getTermType
 
 getGoal :: TermType -> TermType
 getGoal (Abs _ b) = getGoal b
@@ -420,7 +440,8 @@ substitute new index term = case term of
     EQ -> new
     GT -> Var (deBruijnIndex-1, varType)
   App a b termType -> App (substitute new index a) (substitute new index b) termType
-  Abs termType a -> Abs (substitute new index termType) (substitute (raise 1 new) (index+1) a)
+  Abs termType a -> Abs termType (substitute (raise 1 new) (index+1) a)
+  -- Abs termType a -> Abs (substitute new index termType) (substitute (raise 1 new) (index+1) a)
   -- Pi from to -> Pi (substitute new index from) (substitute (raise 1 new) (index+1) to)
   _ -> term
 
@@ -495,6 +516,7 @@ getHeadMetaVar t = case t of
   (App m _ _)   -> getHeadMetaVar m
   _             -> Nothing
 
+-- FIXME: use type from target not from metavariable
 getTermType :: Term -> TermType
 getTermType (MetaVar (_, t))  = t
 getTermType (Constant (_, t)) = t

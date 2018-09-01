@@ -30,18 +30,13 @@ spec = do
       let term =
             Abs Uni
               (App (FreeVar (0, Uni)) (Var (0, Uni)) Uni)
-      -- let fv0Type =
-      --       (Pi (Constant ("T", Uni))
-      --         (Pi
-      --           (App (FreeVar (1, Uni)) (Var (0, Constant ("T", Uni))) Uni)
-      --           (Constant ("T", Uni))))
       let fv0Type =
             (Abs (Constant ("T", starType))
               (Abs
-                (App (FreeVar (1, Uni)) (Var (0, Constant ("T", starType))) Uni)
+                (App (FreeVar (1, Uni)) (Var (0, Constant ("T", starType))) starType)
                 (Constant ("T", starType))))
       -- let fv1Type = (Pi (Constant ("T", Uni)) Uni)
-      let fv1Type = (Abs (Constant ("T", starType)) Uni)
+      let fv1Type = (Abs (Constant ("T", starType)) starType)
       let ctx = IU.add (IU.add IU.createMapContext 0 fv0Type) 1 fv1Type
       -- let expected = Pi (Constant ("T",Uni)) (Pi (App (FreeVar (1,Uni)) (Var (0,Constant ("T",Uni))) Uni) (Constant ("T",Uni)))
       let expected = Abs (Constant ("T",starType)) (Abs (App (FreeVar (1,Uni)) (Var (0,Constant ("T",starType))) Uni) (Constant ("T",starType)))
@@ -51,4 +46,154 @@ spec = do
       traceM $ show $ head result
 
       result `shouldNotBe` []
-      filter ((==) expected) result `shouldNotBe` []
+      -- filter ((==) expected) result `shouldNotBe` []
+
+  describe "force a subterm to have dependent type" $ do
+    it "should return a proper type" $ do
+      let term =
+            App (FreeVar (0, Uni))
+            (Abs Uni
+              (Abs Uni (Var (0, Uni)))) Uni
+
+      let fv0Type =
+            Abs (Abs (Constant ("T", starType))
+                  (Abs
+                    (App (FreeVar (1, Uni)) (Var (0, Constant ("T", starType))) starType)
+                    (Constant ("T", starType))))
+                 (Abs (Constant ("T", starType))
+                  (Abs
+                    (App (FreeVar (1, Uni)) (Var (0, Constant ("T", starType))) starType)
+                    (Constant ("T", starType))))
+
+      let fv1Type = (Abs (Constant ("T", starType)) starType)
+      let ctx = IU.add (IU.add IU.createMapContext 0 fv0Type) 1 fv1Type
+
+      let result = solvePiTerm ctx term
+
+      traceM $ show $ head result
+
+      result `shouldNotBe` []
+
+  describe "solve an small instance of the Post Correspondence Problem" $ do
+    it "should find some solution" $ do
+      let a = 1
+      let b = 2
+      let c = 3
+      let d = 4
+      let p = 5
+      let fVar = 6
+
+      let tType = Constant ("T", starType)
+      let aType = Abs (Constant ("T", starType)) (Constant ("T", starType))
+      let bType = aType
+      let cType = Constant ("T", starType)
+      let dType = cType
+      let pType = Abs (Constant ("T", starType)) starType
+      let fType = Abs tType $ Abs (App (FreeVar (p, Uni)) (Var (0, tType)) Uni) tType
+
+      let phi1 = Abs tType (App (FreeVar (a, aType)) (App (Abs tType (Var (0, tType))) (Var (0, tType)) tType) tType)
+      let phi2 = Abs tType (App (FreeVar (a, aType)) (App (Abs tType (Var (0, tType))) (Var (0, tType)) tType) tType)
+      let phi3 = Abs tType (App (FreeVar (a, aType)) (App (Abs tType (Var (0, tType))) (Var (0, tType)) tType) tType)
+      let v1 = Abs tType (App (FreeVar (a, aType)) (App (Abs tType (Var (0, tType))) (Var (0, tType)) tType) tType)
+      let v2 = Abs tType (App (FreeVar (a, aType)) (App (Abs tType (Var (0, tType))) (Var (0, tType)) tType) tType)
+      let v3 = Abs tType (App (FreeVar (a, aType)) (App (Abs tType (Var (0, tType))) (Var (0, tType)) tType) tType)
+
+      let f = App (Var (2, Uni))
+                  (App (App (App (Var (1, Uni))
+                                 (FreeVar (a, Uni)) Uni)
+                            (FreeVar (a, Uni)) Uni)
+                       (FreeVar (a, Uni)) Uni)
+                  Uni
+
+      let h1 = App (Var (0, Uni))
+                  (App (App (App (Var (1, Uni))
+                                 phi1 Uni)
+                            phi2 Uni)
+                       phi3 Uni)
+                  Uni
+      let h2 = App (Var (0, Uni))
+                  (App (App (App (Var (1, Uni))
+                                 v1 Uni)
+                            v2 Uni)
+                       v3 Uni)
+                  Uni
+      let g1 = App (App (App (Var (1, Uni)) (Abs Uni (Var (0, Uni))) Uni) (Abs Uni (Var (0, Uni))) Uni) (Abs Uni (Var (0, Uni))) Uni
+
+      let g2 = App (App (App (Var (1, Uni)) (Abs Uni (FreeVar (d, Uni))) Uni) (Abs Uni (FreeVar (d, Uni))) Uni) (Abs Uni (FreeVar (d, Uni))) Uni
+
+      let f1 = App (App (FreeVar (fVar, Uni)) (FreeVar (c, Uni)) Uni) g1 Uni
+      let f2 = App (App (FreeVar (fVar, Uni)) (FreeVar (d, Uni)) Uni) g2 Uni
+
+      let term =
+            Abs Uni $ Abs Uni $ Abs Uni $ App (App (App (App f h1 Uni) h2 Uni) f1 Uni) f2 Uni
+
+      let ctx = (((((IU.createMapContext `IU.add` a $ aType) `IU.add` b $ bType) `IU.add` c $ cType) `IU.add` d $ dType) `IU.add` p $ pType) `IU.add` fVar $ fType
+
+      let result = solvePiTerm ctx term
+
+      result `shouldNotBe` []
+
+  -- describe "solve an easy instance of the Post Correspondence Problem by means of type inference" $ do
+  --   it "should return a proper type that encodes a solution for the Post Corresponce Problem" $ do
+  --     -- TODO: create a parser for lambda terms
+  --     -- let term = L f . L g . L h . (f (g a a a))
+  --     --                              (h (g p1 p2 p3))
+  --     --                              (h (g q1 q2 q3))
+  --     --                              (F c (g (L y . y) (L y . y) (L y . y)))
+  --     --                              (F d (g (L y . d) (L y . d) (L y . d)))
+  --     let tType = Constant ("T", starType)
+  --     let fVar = 7
+  --     let c = 8
+  --     let d = 9
+  --     let a = 10
+  --     let b = 20
+  --     let p = 11
+
+  --     let aType = Abs (Constant ("T", starType)) (Constant ("T", starType))
+  --     let bType = aType
+  --     let cType = Constant ("T", starType)
+  --     let dType = cType
+  --     let pType = Abs (Constant ("T", starType)) starType
+  --     let fType = Abs tType $ Abs (App (FreeVar (p, Uni)) (Var (0, tType)) Uni) tType
+
+  --     let phi1 = Abs tType (App (FreeVar (a, aType)) (App (Abs tType (Var (0, tType))) (Var (0, tType)) tType) tType)
+  --     let phi2 = Abs tType (App (FreeVar (a, aType)) (App (FreeVar (b, bType)) (App (Abs tType (Var (0, tType))) (Var (0, tType)) tType) tType ) tType)
+  --     let phi3 = Abs tType (App (FreeVar (b, bType)) (App (FreeVar (b, bType)) (App (FreeVar (a, aType)) (App (Abs tType (Var (0, tType))) (Var (0, tType)) tType) tType ) tType ) tType)
+  --     let v1 = Abs tType (App (FreeVar (b, bType)) (App (FreeVar (a, aType)) (App (FreeVar (a, aType)) (App (Abs tType (Var (0, tType))) (Var (0, tType)) tType) tType ) tType ) tType)
+  --     let v2 = Abs tType (App (FreeVar (a, aType)) (App (FreeVar (a, aType)) (App (Abs tType (Var (0, tType))) (Var (0, tType)) tType) tType ) tType)
+  --     let v3 = Abs tType (App (FreeVar (b, bType)) (App (FreeVar (b, bType)) (App (Abs tType (Var (0, tType))) (Var (0, tType)) tType) tType ) tType)
+
+  --     let f = App (Var (2, Uni))
+  --                 (App (App (App (Var (1, Uni))
+  --                                (FreeVar (a, Uni)) Uni)
+  --                           (FreeVar (a, Uni)) Uni)
+  --                      (FreeVar (a, Uni)) Uni)
+  --                 Uni
+
+  --     let h1 = App (Var (0, Uni))
+  --                 (App (App (App (Var (1, Uni))
+  --                                phi1 Uni)
+  --                           phi2 Uni)
+  --                      phi3 Uni)
+  --                 Uni
+  --     let h2 = App (Var (0, Uni))
+  --                 (App (App (App (Var (1, Uni))
+  --                                v1 Uni)
+  --                           v2 Uni)
+  --                      v3 Uni)
+  --                 Uni
+  --     let g1 = App (App (App (Var (1, Uni)) (Abs Uni (Var (0, Uni))) Uni) (Abs Uni (Var (0, Uni))) Uni) (Abs Uni (Var (0, Uni))) Uni
+
+  --     let g2 = App (App (App (Var (1, Uni)) (Abs Uni (FreeVar (d, Uni))) Uni) (Abs Uni (FreeVar (d, Uni))) Uni) (Abs Uni (FreeVar (d, Uni))) Uni
+
+  --     let f1 = App (App (FreeVar (fVar, Uni)) (FreeVar (c, Uni)) Uni) g1 Uni
+  --     let f2 = App (App (FreeVar (fVar, Uni)) (FreeVar (c, Uni)) Uni) g2 Uni
+
+  --     let term =
+  --           Abs Uni $ Abs Uni $ Abs Uni $ App (App (App (App f h1 Uni) h2 Uni) f1 Uni) f2 Uni
+
+  --     let ctx = (((((IU.createMapContext `IU.add` a $ aType) `IU.add` b $ bType) `IU.add` c $ cType) `IU.add` d $ dType) `IU.add` p $ pType) `IU.add` fVar $ fType
+
+  --     let result = solvePiTerm ctx term
+
+  --     result `shouldNotBe` []
