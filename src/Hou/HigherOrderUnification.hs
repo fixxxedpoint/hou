@@ -25,6 +25,7 @@ module Hou.HigherOrderUnification(
   getTermType,
   someType,
   starType,
+  termType,
   varType,
   preunifyAllSolutions,
   preunifyNonDeterministic,
@@ -79,6 +80,9 @@ starType = Constant ("*", Constant ("[]", Uni))
 
 someType :: TermType
 someType = Constant ("a", starType)
+
+termType :: TermType
+termType = Uni
 
 varType :: Int -> TermType
 varType name = FreeVar (name, Uni)
@@ -163,6 +167,7 @@ preunify' equations solution = interrupt $ callCC $ \exit -> do
   let flexRigid = head . filter (\(a, b) -> isFlexible a && isRigid b) $ simplified
   (mv, term) <- generateStep flexRigid
   let (newSolution, newEquations) = update mv term solution simplified
+  Debug.Trace.traceM $ "preunify' newEquations: " ++ show newEquations
   preunify' newEquations newSolution
 
 {-|
@@ -193,7 +198,7 @@ unify :: (Solution s, NonDet n)
 unify eqs s = do
   let lnf = (toLongNormalForm *** toLongNormalForm) <$> eqs
   presolution <- preunify lnf s
-  traceM "already preunified"
+  Debug.Trace.traceM "already preunified"
   unify' ((apply presolution *** apply presolution) <$> lnf) presolution
 
 unify' :: (Solution s, NonDet n)
@@ -202,6 +207,7 @@ unify' :: (Solution s, NonDet n)
        -> GenT MetaVariableName (NonDeterministicT r n) s
 unify' equations solution = interrupt $ callCC $ \exit -> do
   simplified <- fixPointOfSimplify $ (normalize *** normalize) <$> equations
+  Debug.Trace.traceM $ "unify' equations: " ++ show simplified
   traceM ("unify3: " ++ show (isSolved simplified))
   when (null simplified) $ exit solution
   (mv, term) <- generateStep (head simplified)
@@ -237,22 +243,29 @@ simplify :: (MonadPlus m, MonadGen MetaVariableName m) => Equation -> m [Equatio
 simplify (t1, t2)
   | t1 == t2 = return [] -- check for metavars?
   | (Abs type1 a) <- t1,
-    (Abs type2 b) <- t2 = do
-    -- type1 == type2 = do
+    (Abs type2 b) <- t2,
+    type1 == type2 = do
       newVar <- gen
       let newCons = FreeVar (newVar, type1)
+      -- if type1 == starType then fail $ "failed freevar: " ++ show a ++ "\n" ++ show b
+      --   else return ()
       let newA = substitute newCons 0 a
       let newB = substitute newCons 0 b
       simplify (newA, newB)
       -- return [(newA, newB)]
   | (c1, ctx1) <- getHead t1,
     (c2, ctx2) <- getHead t2,
-    isFreeVarOrConstant c1 && isFreeVarOrConstant c2 = do
+    (isFreeVarOrConstant c1 && isFreeVarOrConstant c2) = do
       guard (c1 == c2) -- this can fail the whole process
       fold <$> mapM simplify (zip ctx1 ctx2) -- faster than using fixPointOfSimplify
   | isRigid t1 && isFlexible t2 = trace "rigid-flex" $ return [(t2, t1)]
   -- | isFlexible t1 && isRigid t2 = Debug.Trace.trace ("flex-rigid: " ++ show t1 ++ " --- " ++ show t2) $ return [(getTermType t1, getTermType t2), (t1, t2)]
   | isFlexible t1 && isRigid t2 = trace ("flex-rigid: " ++ show t1 ++ " --- " ++ show t2) $ return [(t1, t2)]
+  | isFlexible t1 && isFlexible t2,
+    (c1, ctx1) <- getHead t1,
+    (c2, ctx2) <- getHead t2,
+    c1 == c2 = do
+      (:) (c1, c2) <$> fold <$> mapM simplify (zip ctx1 ctx2)
   | isFlexible t1 && isFlexible t2 = trace "flex-flex" $ return [(t1, t2)]
   | otherwise = trace ("otherwise: " ++ show t1 ++ "---" ++ show t2) mzero
 
@@ -294,16 +307,18 @@ generateStep (flex, rigid) | isFlexible flex = do
   let headFreeVar = getHeadFreeVar rigid
   let headMetaVar = getHeadMetaVar rigid
   -- FIXME: add possibility to generate a lambda abstraction
-  let availableTerms = (Constant <$> maybeToList headConstant) ++
-                       (FreeVar <$> maybeToList headFreeVar) ++
-                       (MetaVar <$> maybeToList headMetaVar)
+  let availableTerms = (FreeVar <$> maybeToList headFreeVar) ++
+                       (Constant <$> maybeToList headConstant) ++
+                       (filter (/= flexTerm) $ MetaVar <$> maybeToList headMetaVar)
   -- TODO add posibility to return a Pi term
   traceM $ "before generate: " ++ show headConstant
   -- Debug.Trace.traceM $ "before generate: " ++ show headConstant
-  -- Debug.Trace.traceM $ "generateStep rigid: " ++ show rigid
-  -- Debug.Trace.traceM $ "generateStep flex: " ++ show flex
+  -- Debug.Trace.traceM $ "before generate head FreeVar: " ++ show headFreeVar
+  Debug.Trace.traceM $ "before generate available terms: " ++ show availableTerms
+  Debug.Trace.traceM $ "generateStep rigid: " ++ show rigid
+  Debug.Trace.traceM $ "generateStep flex: " ++ show flex
   generatedTerm <- generate (getTermType flexTerm) availableTerms
-  -- Debug.Trace.traceM $ "generated term: " ++ show flexVariable ++ "---" ++ show generatedTerm
+  Debug.Trace.traceM $ "generated term: " ++ show flexVariable ++ "---" ++ show generatedTerm
   return (flexVariable, generatedTerm)
 -- generateStep (t1, t2) = fail $ "first term of the equation is not flexible: " ++ show t1 ++ "---" ++ show t2
 generateStep (t1, t2) = Debug.Trace.traceStack "fail" $ fail $ "first term of the equation is not flexible: " ++ show t1 ++ "---" ++ show t2
@@ -324,7 +339,9 @@ generate varType availableTerms = do
   -- Debug.Trace.traceM $ "available terms: " ++ show availableTerms
   traceM $ "Matching assumptions: " ++ show matchingAssumptions
   traceM $ "Matching terms: " ++ show matchingTerms
+  Debug.Trace.traceM $ "Matching terms: " ++ show matchingTerms
   traceM ("generate: " ++ show matchingAssumptions)
+  Debug.Trace.traceM $ "is empty :" ++ show (null (matchingTerms ++ matchingAssumptions))
   head <- anyOf $ matchingAssumptions ++ matchingTerms -- ++ [newMeta]
   traceM $ "generate head: " ++ show head ++ " --- " ++ show matchingAssumptions ++ " --- " ++ show matchingTerms
   result <- generateLongTerm assumptions head

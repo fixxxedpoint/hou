@@ -23,6 +23,8 @@ import           Control.Monad.Cont
 import           Control.Monad.Gen
 import qualified Data.FMList         as FML
 
+import qualified Debug.Trace
+
 
 class NonDet n where
   failure :: n a
@@ -140,7 +142,7 @@ levelIter step c =
   }
   where yieldB x =
           DepthBounded {
-            (!) = \d -> trace ("levelIter: " ++ show d) $ if d < step then trace "yielding" $ yield x else trace "levelIter" failure
+            (!) = \d -> trace ("levelIter: " ++ show d) $ if d < step then trace "yielding" $ yield x else Debug.Trace.trace "levelIter" failure
           }
 
 iterDepth :: (Computation m, NonDet m)
