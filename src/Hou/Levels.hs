@@ -32,15 +32,22 @@ newtype DiffList a = DiffList { (>>>) :: [a] -> [a] }
 
 newtype Levels n a = Levels { levels :: [n a] }
 
-newtype DepthBounded n a = DepthBounded { (!) :: Integer -> n a }
+newtype DepthBounded n a = DepthBounded {
+                             (!) :: Integer -- ^ current depth
+                                 -> (n a, Bool) -- ^ result and a bool indicator of whether it
+                                                --   reached the bottom of the computation
+                           }
 
 newtype NonDeterministicT r (m :: * -> *) a = NDT { (!!>) :: ContT r m a }
   deriving (Functor, Applicative, Monad, MonadCont, MonadTrans)
 
 instance (NonDet n) => NonDet (DepthBounded n) where
-  failure = DepthBounded . const $ failure
-  choice a b = DepthBounded $ \d -> if d == 0 then failure
-                                    else choice (a ! (d-1)) (b ! (d-1))
+  failure = DepthBounded . const $ (failure, True)
+  choice a b = DepthBounded $ \d -> if d == 0 then (failure, False)
+                                    else do
+                                           let (rA, contA) = a ! (d-1)
+                                           let (rB, contB) = b ! (d-1)
+                                           (choice rA rB, contA && contB)
 
 instance (NonDet m) => MonadPlus (NonDeterministicT r m) where
   mzero = NDT . ContT . const $ failure
@@ -134,13 +141,17 @@ levelIter :: (Computation m, NonDet m)
           => Integer
           -> NonDeterministicT a (DepthBounded m) a
           -> Levels m a
-levelIter step c =
+levelIter step c = do
+  let levelValues = [ (runContT . (!!>) $ c) yieldB ! d | d <- [0,step..] ]
+  let (notFinished, afterFinished) = span (\(_, finished) -> not finished) levelValues
   Levels {
-    levels = [ (runContT . (!!>) $ c) yieldB ! d | d <- [0,step..] ]
+    levels = fst <$> notFinished ++ take 1 afterFinished
   }
   where yieldB x =
           DepthBounded {
-            (!) = \d -> trace ("levelIter: " ++ show d) $ if d < step then trace "yielding" $ yield x else trace "levelIter" failure
+            (!) = \d -> trace ("levelIter: " ++ show d) $
+                          if d < step then trace "yielding"  (yield x, True)
+                                      else trace "levelIter" (failure, True)
           }
 
 iterDepth :: (Computation m, NonDet m)
