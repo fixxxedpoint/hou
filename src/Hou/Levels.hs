@@ -23,8 +23,6 @@ import           Control.Monad.Cont
 import           Control.Monad.Gen
 import qualified Data.FMList         as FML
 
-import qualified Debug.Trace
-
 
 class NonDet n where
   failure :: n a
@@ -132,6 +130,8 @@ runLevels = foldr choice failure . levels
 levelSearch :: (Computation m, NonDet m) => NonDeterministicT a (Levels m) a -> m a
 levelSearch c = runLevels . (runContT . (!!>)) c $ yield
 
+-- TODO: this will run forever in case there are no solutions, i.e. all branches are finite and returns failure
+-- Fix it!
 levelIter :: (Computation m, NonDet m)
           => Integer
           -> NonDeterministicT a (DepthBounded m) a
@@ -142,7 +142,7 @@ levelIter step c =
   }
   where yieldB x =
           DepthBounded {
-            (!) = \d -> trace ("levelIter: " ++ show d) $ if d < step then trace "yielding" $ yield x else Debug.Trace.trace "levelIter" failure
+            (!) = \d -> trace ("levelIter: " ++ show d) $ if d < step then trace "yielding" $ yield x else trace "levelIter" failure
           }
 
 iterDepth :: (Computation m, NonDet m)

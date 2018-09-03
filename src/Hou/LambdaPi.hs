@@ -42,12 +42,18 @@ substituteWT new index term = case term of
   Uni -> term
 
 buildImplication :: Term -> Term -> Term
-buildImplication t1 t2 | getTermType t1 == starType && getTermType t2 == Abs termType starType =
+buildImplication t1 t2 | getTermType t1 == starType && getTermType t2 == Abs t1 starType =
   App
-  (App (Constant ("->", Abs starType (Abs (Abs Uni starType) starType))) t1 (Abs (Abs Uni starType) starType))
+  (App (Constant ("->", Abs starType (Abs (Abs t1 starType) starType))) t1 (Abs (Abs t1 starType) starType))
   t2 starType
 buildImplication t1 t2 = Debug.Trace.traceStack "asdasd" $ error $ "term: " ++ show t1 ++ "---" ++ show t2
 
+-- TODO: General idea of the algorithm (the one presented below is rather not correct):
+-- Is it true that a term if a term can be typed using dependent types then there exists an environment for simply typed lambda calculus in which this term has a type in it? If so, then before infering an application, first try to typecheck both terms in some contexts. This also assures that every term is strongly normalizable. Only then both are typable, try to infere a dependent type.
+-- 1) infer all subterms using simply type lambda calculus
+-- 2) if some subterm is not typable, then return an error
+-- 3) otherwise, typcheck all types in the context, that is check if all types are correct and all applications are correct.
+--    After this, substitute all dependent types of kind T -> * to kind TermType -> *. WARNING: you shouldn't forget their types this way. It makes it impossible to guess some application of terms, or rather can make non-normalizable.
 typeOf :: (Context c FreeVarName PiTermType)
        => c
        -> PiTerm
@@ -74,7 +80,7 @@ typeOf' c t tType = case t of
     mvName <- gen
     let argType = MetaVar (mvName, starType)
     resultName <- gen
-    let resultType = MetaVar (resultName, Abs termType starType)
+    let resultType = MetaVar (resultName, Abs argType starType)
     eq1 <- typeOf' c t1 (buildImplication argType resultType)
     eq2 <- typeOf' c t2 argType
     -- newArgName <- gen
@@ -86,10 +92,10 @@ typeOf' c t tType = case t of
     mvName <- gen
     let mv = MetaVar (mvName, starType)
     freeVarName <- gen
-    let fvVal = (freeVarName, termType)
+    let fvVal = (freeVarName, mv)
     let fv = FreeVar fvVal
     returnName <- gen
-    let returnType = MetaVar (returnName, Abs termType starType)
+    let returnType = MetaVar (returnName, Abs mv starType)
     -- argName <- gen
     -- let argType = MetaVar (argName, starType)
     eqs <- typeOf' (IU.add c freeVarName mv) (substitute fv 0 body) (App returnType fv starType)

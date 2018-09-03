@@ -16,6 +16,11 @@ import           Debug.Trace
 
 spec :: Spec
 spec = do
+  describe "dummy test" $ do
+    it "should pass" $ do
+      1 `shouldBe` 1
+
+spec1 = do
   describe "infere type for a term of the form \\lambda x. x" $ do
     it "should return some type" $ do
       let term = Abs Uni (Var (0, Uni))
@@ -33,17 +38,9 @@ spec = do
       let term =
             Abs Uni
               (App (FreeVar (fv0, Uni)) (Var (0, Uni)) Uni)
-      -- FIXME
-      -- let fv1Type = buildImplication tType (Abs starType (Constant ("PI", starType)))
       let fv1Type = Abs termType starType
-      -- let fv1Type = Abs starType (Constant ("PI", starType))
       let fv0Type =
-            buildImplication tType (Abs termType (buildImplication (App (FreeVar (fv1, fv1Type)) (Var (0, termType)) starType) (Abs termType tType)))
-            -- (Abs (Constant ("T", starType))
-            --   (Abs
-            --     (App (FreeVar (1, Uni)) (Var (0, Constant ("T", starType))) starType)
-            --     (Constant ("T", starType))))
-      -- let fv1Type = (Abs (Constant ("T", starType)) starType)
+            buildImplication tType (Abs termType (buildImplication (App (FreeVar (fv1, fv1Type)) (Var (0, tType)) starType) (Abs termType tType)))
       let ctx = IU.add (IU.add IU.createMapContext fv0 fv0Type) fv1 fv1Type
       -- let expected = Pi (Constant ("T",Uni)) (Pi (App (FreeVar (1,Uni)) (Var (0,Constant ("T",Uni))) Uni) (Constant ("T",Uni)))
       -- let expected = Abs (Constant ("T",starType)) (Abs (App (FreeVar (1,Uni)) (Var (0,Constant ("T",starType))) Uni) (Constant ("T",starType)))
