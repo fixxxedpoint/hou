@@ -14,14 +14,14 @@ import qualified Data.FMList as FML
 import           Debug.Trace
 
 
-spec :: Spec
-spec = do
-  describe "dummy test" $ do
-    it "should pass" $ do
-      1 `shouldBe` 1
+-- spec :: Spec
+-- spec = do
+--   describe "dummy test" $ do
+--     it "should pass" $ do
+--       1 `shouldBe` 1
 
-spec1 = do
-  describe "infere type for a term of the form \\lambda x. x" $ do
+spec = do
+  describe "infere type for a term of the form \\lambda x . x" $ do
     it "should return some type" $ do
       let term = Abs Uni (Var (0, Uni))
 
@@ -30,18 +30,18 @@ spec1 = do
 
       result `shouldNotBe` []
 
-  describe "infere type for a term of the form \\lambda x. Px, where P is of type A -> *" $ do
+  describe "infere type for a term of the form \\lambda x . Fx, where F is of type \\lambda x . Px and P is \\lambda T . *" $ do
     it "should return some type" $ do
       let tType = Constant ("T", starType)
       let fv0 = 0
-      let fv1 = 1
+      let pType = Abs tType starType
+      let p = Constant ("P", pType)
       let term =
             Abs Uni
               (App (FreeVar (fv0, Uni)) (Var (0, Uni)) Uni)
-      let fv1Type = Abs termType starType
       let fv0Type =
-            buildImplication tType (Abs termType (buildImplication (App (FreeVar (fv1, fv1Type)) (Var (0, tType)) starType) (Abs termType tType)))
-      let ctx = IU.add (IU.add IU.createMapContext fv0 fv0Type) fv1 fv1Type
+            buildImplication tType (Abs tType (App p (Var (0, tType)) starType))
+      let ctx = IU.add IU.createMapContext fv0 fv0Type
       -- let expected = Pi (Constant ("T",Uni)) (Pi (App (FreeVar (1,Uni)) (Var (0,Constant ("T",Uni))) Uni) (Constant ("T",Uni)))
       -- let expected = Abs (Constant ("T",starType)) (Abs (App (FreeVar (1,Uni)) (Var (0,Constant ("T",starType))) Uni) (Constant ("T",starType)))
 

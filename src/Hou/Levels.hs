@@ -33,7 +33,7 @@ newtype DiffList a = DiffList { (>>>) :: [a] -> [a] }
 newtype Levels n a = Levels { levels :: [n a] }
 
 newtype DepthBounded n a = DepthBounded {
-                             (!) :: Integer -- ^ current depth
+                             (!) :: Integer     -- ^ current depth
                                  -> (n a, Bool) -- ^ result and a bool indicator of whether it
                                                 --   reached the bottom of the computation
                            }
@@ -137,8 +137,6 @@ runLevels = foldr choice failure . levels
 levelSearch :: (Computation m, NonDet m) => NonDeterministicT a (Levels m) a -> m a
 levelSearch c = runLevels . (runContT . (!!>)) c $ yield
 
--- TODO: this will run forever in case there are no solutions, i.e. all branches are finite and returns failure
--- Fix it!
 levelIter :: (Computation m, NonDet m)
           => Integer
           -> NonDeterministicT a (DepthBounded m) a

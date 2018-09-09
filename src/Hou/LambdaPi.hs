@@ -17,6 +17,7 @@ import           Hou.InferenceUtils         as IU
 import           Hou.MixedPrefix
 
 import           Control.Monad
+import           Control.Applicative
 import           Control.Monad.Gen
 import           Data.FMList                as FML
 import           Data.Maybe
@@ -42,11 +43,29 @@ substituteWT new index term = case term of
   Uni -> term
 
 buildImplication :: Term -> Term -> Term
-buildImplication t1 t2 | getTermType t1 == starType && getTermType t2 == Abs t1 starType =
+buildImplication t1 t2 | getTermType t2 == Abs t1 starType =
   App
-  (App (Constant ("->", Abs starType (Abs (Abs t1 starType) starType))) t1 (Abs (Abs t1 starType) starType))
+  (App (Constant ("->", Abs starType (Abs (Abs starType starType) starType))) t1 (Abs (Abs starType starType) starType))
   t2 starType
-buildImplication t1 t2 = Debug.Trace.traceStack "asdasd" $ error $ "term: " ++ show t1 ++ "---" ++ show t2
+buildImplication t1 t2 = Debug.Trace.traceStack "buildImplication" $ error $ "term: " ++ show t1 ++ "---" ++ show t2
+
+-- type Error = String
+
+-- typeOf :: (Context c FreeVarName PiTermType, MonadPlus m)
+--        => c
+--        -> PiTerm
+--        -> Either Error PiTermType
+-- typeOf c (FreeVar varName, _) = maybe ("Unknown FreeVar: " ++ show varName) Right $ IU.lookup c varName
+-- typeOf c (App t1 t2) = do
+--   t1Type <- typeOf c t1
+--   t2Type <- typeOf c t2
+--   asd
+
+-- typeOf' :: (Context c FreeVarName PiTermType, MonadGen MetaVariableName m, MonadPlus m)
+--        => c
+--        -> PiTerm
+--        -> PiTermType
+--        -> m [Equation]
 
 -- TODO: General idea of the algorithm (the one presented below is rather not correct):
 -- Is it true that a term if a term can be typed using dependent types then there exists an environment for simply typed lambda calculus in which this term has a type in it? If so, then before infering an application, first try to typecheck both terms in some contexts. This also assures that every term is strongly normalizable. Only then both are typable, try to infere a dependent type.
@@ -77,8 +96,8 @@ typeOf' c t tType = case t of
   FreeVar (varName, _) -> maybe mzero (\x -> return [(tType, x)]) $ IU.lookup c varName
 
   App t1 t2 _ -> do
-    mvName <- gen
-    let argType = MetaVar (mvName, starType)
+    argName <- gen
+    let argType = MetaVar (argName, starType)
     resultName <- gen
     let resultType = MetaVar (resultName, Abs argType starType)
     eq1 <- typeOf' c t1 (buildImplication argType resultType)
@@ -101,6 +120,28 @@ typeOf' c t tType = case t of
     eqs <- typeOf' (IU.add c freeVarName mv) (substitute fv 0 body) (App returnType fv starType)
     return $ (tType, buildImplication mv returnType) : eqs
   _ -> fail "invalid term"
+
+-- typeOf2 :: (Context c FreeVarName PiTermType, Solution s)
+--         => c
+--         -> s
+--         -> PiTerm
+--         -> Maybe (s, PiTermType)
+-- typeOf2 c s (FreeVar (varName, _)) = (IU.lookup c varName <|> Nothing) >>= \result -> return (s, apply s result)
+-- typeOf2 c s (App t1 t2 _) = do
+--   (s1, t1Type) <- typeOf2 c s t1
+--   (s2, t2Type) <- typeOf2 c s1 t2
+--   case t1Type of
+--     App
+--       (App
+--          (Constant ("->", Abs starType (Abs (Abs starType starType) starType)))
+--          t1Type'
+--          (Abs (Abs starType starType) starType))
+--       t2Type'
+--       starType
+--       -> do
+--       newS <- unifyAllSolutions [(t1Type', t2Type)] s2
+--       return (newS, apply newS t2Type')
+--     _ -> do
 
 solvePiTerm :: (Context c FreeVarName PiTermType) => c -> PiTerm -> [PiTermType]
 solvePiTerm c = FML.toList . solve' c

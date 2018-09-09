@@ -33,9 +33,3 @@ createMapContext = MC Data.Map.empty
 instance (Ord n) => Context (MapContext n t) n t where
   lookup (MC c) = flip Data.Map.lookup c
   add (MC c) name term = MC $ Data.Map.insert name term c
-
-implication :: H.Term -> H.Term -> H.Term
-implication t1 t2 | H.getTermType t1 == H.starType && H.getTermType t2 == H.starType =
-  H.App
-  (H.App (H.Constant ("->", H.Abs H.starType (H.Abs H.starType H.starType))) t1 (H.Abs H.starType H.starType))
-  t2 H.starType

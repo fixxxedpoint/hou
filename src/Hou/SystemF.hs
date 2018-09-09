@@ -50,6 +50,15 @@ data FTerm =
   TypeAbs (Maybe VarName) FTerm
   deriving (Show, Read, Eq)
 
+implication :: H.Term -> H.Term -> H.Term
+implication t1 t2 | H.getTermType t1 == H.starType && H.getTermType t2 == H.starType =
+  H.App
+  (H.App (H.Constant ("->", H.Abs H.starType (H.Abs H.starType H.starType))) t1 (H.Abs H.starType H.starType))
+  t2 H.starType
+
+forAll :: H.Term -> H.Term
+forAll t | H.getTermType t == H.Abs H.starType H.starType = H.App (H.Constant ("∀", H.Abs (H.Abs H.starType H.starType) H.starType)) t H.starType
+
 {-|
 Function returning first valid type found for a given term.
 -}
@@ -95,9 +104,6 @@ newMetaVariable :: (MonadGen H.MetaVariableName m) => m H.MetaVariable
 newMetaVariable = do
   newVar <- gen
   return (newVar, H.starType)
-
-forAll :: H.Term -> H.Term
-forAll t | H.getTermType t == H.Abs H.starType H.starType = H.App (H.Constant ("∀", H.Abs (H.Abs H.starType H.starType) H.starType)) t H.starType
 
 {-|
 Main function of this module. It translates a problem of typing of a term of SystemF  onto

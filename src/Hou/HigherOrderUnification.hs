@@ -44,6 +44,7 @@ module Hou.HigherOrderUnification(
 
 import qualified Hou.Levels as L
 import           Hou.Trace
+import qualified Debug.Trace
 
 import qualified Control.Applicative as Appl
 import           Control.Arrow
@@ -251,8 +252,20 @@ simplify (t1, t2)
       let newA = substitute newCons 0 a
       let newB = substitute newCons 0 b
       simplify (newA, newB)
+      -- newVar <- gen
+      -- let newConsA = FreeVar (newVar, type1)
+      -- let newConsB = FreeVar (newVar, type1)
+      -- let newA = substitute newConsA 0 a
+      -- let newB = substitute newConsB 0 b
+      -- simplify (newA, newB)
+      -- newVar <- gen
+      -- let newCons = MetaVar (newVar, type1)
+      -- let newA = substitute newCons 0 a
+      -- let newB = substitute newCons 0 b
+      -- simplify (newA, newB)
   | (c1, ctx1) <- getHead t1,
     (c2, ctx2) <- getHead t2,
+    -- c1 == c2 = do
     (isFreeVarOrConstant c1 && isFreeVarOrConstant c2) = do
       guard (c1 == c2) -- this can fail the whole process
       fold <$> mapM simplify (zip ctx1 ctx2) -- faster than using fixPointOfSimplify
@@ -276,6 +289,7 @@ fixPointOfSimplify cs = do
 isFreeVarOrConstant :: Term -> Bool
 isFreeVarOrConstant (FreeVar _)  = True
 isFreeVarOrConstant (Constant _) = True
+-- isFreeVarOrConstant (MetaVar _) = True
 isFreeVarOrConstant _            = False
 
 isRigid :: Term -> Bool
@@ -283,11 +297,11 @@ isRigid = not . isFlexible
 
 isFlexible :: Term -> Bool
 isFlexible t | (MetaVar _, _) <- getHead t = trace "is flexible" True
-             | otherwise = False
+             | otherwise = trace "is not flexible" False
 
 isVarType :: TermType -> Bool
 isVarType (Abs _ _) = False
-isVarType _           = True
+isVarType _         = True
 
 {-|
 Tries to non-deterministically solve an equation using projection or imitation.
@@ -307,11 +321,10 @@ generateStep (flex, rigid) | isFlexible flex = do
                        (Constant <$> maybeToList headConstant) ++
                        (filter (/= flexTerm) $ MetaVar <$> maybeToList headMetaVar)
   traceM $ "before generate: " ++ show headConstant
-  -- Debug.Trace.traceM $ "before generate: " ++ show headConstant
-  -- Debug.Trace.traceM $ "before generate head FreeVar: " ++ show headFreeVar
+  traceM $ "before generate head FreeVar: " ++ show headFreeVar
   traceM $ "before generate available terms: " ++ show availableTerms
   traceM $ "generateStep rigid: " ++ show rigid
-  traceM $ "generateStep flex: " ++ show flex
+  traceM  $ "generateStep flex: " ++ show flex
   generatedTerm <- generate (getTermType flexTerm) availableTerms
   traceM $ "generated term: " ++ show flexVariable ++ "---" ++ show generatedTerm
   return (flexVariable, generatedTerm)
