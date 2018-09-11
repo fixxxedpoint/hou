@@ -22,7 +22,7 @@ normalize = do
     it "should return \\lambda x . x" $ do
       let term = App (Abs (Abs (Abs someType someType) (Abs someType someType)) (Var (0, (Abs someType someType)))) (Abs someType (Var (0, someType))) (Abs someType someType)
 
-      let result = Hou.HigherOrderUnification.normalize term
+      let result = FML.head $ Hou.HigherOrderUnification.normalize term
 
       result `shouldBe` Abs someType (Var (0, someType))
 
@@ -30,7 +30,7 @@ normalize = do
     it "should return \\lambda y . z" $ do
       let term = App (Abs someType (Abs someType (Var (1, someType)))) (Var (2, someType)) (Abs someType someType)
 
-      let result = Hou.HigherOrderUnification.normalize term
+      let result = FML.head $ Hou.HigherOrderUnification.normalize term
 
       result `shouldBe` Abs someType (Var (3, someType))
 

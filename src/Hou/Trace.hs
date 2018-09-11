@@ -9,3 +9,5 @@ module Hou.Trace where
 traceM _ = return ()
 
 trace = flip const
+
+traceStack = flip const

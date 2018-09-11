@@ -15,14 +15,14 @@ import           Hou.HigherOrderUnification as H
 import           Hou.Levels
 import           Hou.InferenceUtils         as IU
 import           Hou.MixedPrefix
+import           Hou.Trace
 
 import           Control.Monad
 import           Control.Applicative
 import           Control.Monad.Gen
 import           Data.FMList                as FML
 import           Data.Maybe
-
-import           Debug.Trace
+import qualified Debug.Trace
 
 
 type PiTerm = Term
@@ -42,12 +42,18 @@ substituteWT new index term = case term of
   FreeVar (name, varType) -> FreeVar (name, substituteWT new index varType)
   Uni -> term
 
+-- buildImplication :: Term -> Term -> Term
+-- buildImplication t1 t2 | getTermType t1 == starType && getTermType t2 == Abs t1 (Abs starType starType) =
+--   App
+--   (App (Constant ("->", Abs starType (Abs (Abs t1 (Abs starType starType)) starType))) t1 (Abs (Abs t1 (Abs starType starType)) starType))
+--   t2 starType
+-- buildImplication t1 t2 = traceStack "buildImplication" $ error $ "term: " ++ show t1 ++ "---" ++ show t2
 buildImplication :: Term -> Term -> Term
-buildImplication t1 t2 | getTermType t2 == Abs t1 starType =
+buildImplication t1 t2 | getTermType t1 == starType && getTermType t2 == Abs t1 starType =
   App
-  (App (Constant ("->", Abs starType (Abs (Abs starType starType) starType))) t1 (Abs (Abs starType starType) starType))
+  (App (Constant ("->", Abs starType (Abs (Abs t1 starType) starType))) t1 (Abs (Abs t1 starType) starType))
   t2 starType
-buildImplication t1 t2 = Debug.Trace.traceStack "buildImplication" $ error $ "term: " ++ show t1 ++ "---" ++ show t2
+buildImplication t1 t2 = traceStack "buildImplication" $ error $ "term: " ++ show t1 ++ "---" ++ show t2
 
 -- type Error = String
 
@@ -93,7 +99,7 @@ typeOf' :: (Context c FreeVarName PiTermType, MonadGen MetaVariableName m, Monad
        -> m [Equation]
 -- TODO add typechecking for types, i.e. if types are correct
 typeOf' c t tType = case t of
-  FreeVar (varName, _) -> maybe mzero (\x -> return [(tType, x)]) $ IU.lookup c varName
+  FreeVar (varName, _) -> maybe mzero (\x -> return $ (tType, x) : buildTypeEquations tType x) $ IU.lookup c varName
 
   App t1 t2 _ -> do
     argName <- gen
@@ -105,7 +111,8 @@ typeOf' c t tType = case t of
     -- newArgName <- gen
     -- let newArg = MetaVar (newArgName, starType)
     -- return $ [(tType, App resultType newArg starType)] ++ eq1 ++ eq2
-    return $ [(tType, App resultType t2 starType)] ++ eq1 ++ eq2
+    let appResult = App resultType t2 starType
+    return $ (tType, appResult) : buildTypeEquations tType appResult ++ eq1 ++ eq2
 
   Abs _ body -> do
     mvName <- gen
@@ -118,8 +125,14 @@ typeOf' c t tType = case t of
     -- argName <- gen
     -- let argType = MetaVar (argName, starType)
     eqs <- typeOf' (IU.add c freeVarName mv) (substitute fv 0 body) (App returnType fv starType)
-    return $ (tType, buildImplication mv returnType) : eqs
+    let absResult = buildImplication mv returnType
+    return $ (tType, absResult) : buildTypeEquations tType absResult ++ eqs
   _ -> fail "invalid term"
+
+buildTypeEquations :: PiTermType -> PiTermType -> [Equation]
+buildTypeEquations (App a1 b1 t1) (App a2 b2 t2) = (getTermType t1, getTermType t2) : (t1, t2) : buildTypeEquations a1 a2 ++ buildTypeEquations b1 b2
+buildTypeEquations (Abs t1 b1) (Abs t2 b2) = (getTermType t1, getTermType t2) : (t1, t2) : buildTypeEquations b1 b2
+buildTypeEquations m1 m2 = [(getTermType m1, getTermType m2)]
 
 -- typeOf2 :: (Context c FreeVarName PiTermType, Solution s)
 --         => c
@@ -147,11 +160,15 @@ solvePiTerm :: (Context c FreeVarName PiTermType) => c -> PiTerm -> [PiTermType]
 solvePiTerm c = FML.toList . solve' c
 
 solve' :: (Context c FreeVarName PiTermType) => c -> PiTerm -> FML.FMList PiTermType
-solve' c t = do
-  (termType, equations) <- maybe mzero return $ typeOf c t
+solve' c t = iterDepthDefault $ do
+  (termType, equations) <- maybe failure return $ typeOf c t
   traceM $ show termType
   traceM "---"
   traceM $ show equations
-  iterDepthDefault $ do
-    solution <- unifyNonDeterministic equations createListSolution
-    return $ normalize $ apply solution termType
+  solution <- unifyNonDeterministic equations createListSolution
+  Debug.Trace.traceM "solve'"
+  result <- normalize $ apply solution termType
+  Debug.Trace.traceM $ show solution
+  Debug.Trace.traceM $ show termType
+  Debug.Trace.traceM $ show result
+  return result

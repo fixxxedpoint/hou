@@ -53,6 +53,7 @@ import           Control.Monad.Cont
 import           Control.Monad.Gen
 import qualified Data.FMList         as FML
 import           Data.Foldable
+import           Data.List
 import           Data.Maybe
 
 
@@ -124,8 +125,8 @@ instance Solution ListSolution where
   emptySolution = createListSolution
 
   apply (LS []) t = trace "1" t
-  apply s (App t1 t2 appType) = trace "2" $ App (apply s t1) (apply s t2) appType
-  apply s (Abs absType term) = trace "3" $ Abs absType $ apply s term
+  apply s (App t1 t2 appType) = trace "2" $ App (apply s t1) (apply s t2) (apply s appType)
+  apply s (Abs absType term) = trace "3" $ Abs (apply s absType) (apply s term)
   apply s@(LS [(mv1@(mv1Name, _), term)]) t@(MetaVar mv2@(mv2Name, tType)) | mv1Name == mv2Name = trace "5.1" term
                                                                            | otherwise = trace "5.2" t
   apply (LS (s:rest)) t@(MetaVar _) = trace "6" $ apply (LS [s]) $ apply (LS rest) t
@@ -155,8 +156,9 @@ preunify :: (Solution s, L.NonDet n)
          => [Equation]
          -> s
          -> GenT MetaVariableName (L.NonDeterministicT r n) s
-preunify eqs s = let lnf = (toLongNormalForm *** toLongNormalForm) <$> eqs in
-  preunify' lnf s
+preunify eqs s = do
+  eqs' <- lift . sequence $ (\(a, b) -> (,) <$> a <*> b) . (toLongNormalForm *** toLongNormalForm) <$> eqs
+  preunify' eqs' s
 
 preunify' :: (Solution s, L.NonDet n)
           => [Equation]
@@ -164,12 +166,16 @@ preunify' :: (Solution s, L.NonDet n)
           -> GenT MetaVariableName (L.NonDeterministicT r n) s
 preunify' [] solution = trace "preunify []" $ return solution
 preunify' equations solution = L.interrupt $ callCC $ \exit -> do
-  simplified <- fixPointOfSimplify $ (normalize *** normalize) <$> equations
+  -- Debug.Trace.traceM $ "preunify': " ++ show equations
+  normalized <- lift . sequence $ (\(a, b) -> (,) <$> a <*> b) . (normalize *** normalize) <$> equations
+  simplified <- fixPointOfSimplify normalized
+  -- Debug.Trace.traceM $ "preunify' simplified: " ++ show simplified
   when (isSolved simplified) $ exit solution
-  let flexRigid = head . filter (\(a, b) -> isFlexible a && isRigid b) $ simplified
+  flexRigid <- L.anyOf . filter (\(a, b) -> isFlexible a && isRigid b) $ simplified
   (mv, term) <- generateStep flexRigid
   let (newSolution, newEquations) = update mv term solution simplified
-  traceM $ "preunify' newEquations: " ++ show newEquations
+  -- Debug.Trace.traceM $ "preunify' newEquations: " ++ show newEquations
+  guard (newEquations /= equations)
   preunify' newEquations newSolution
 
 {-|
@@ -198,22 +204,28 @@ unify :: (Solution s, L.NonDet n)
       -> s
       -> GenT MetaVariableName (L.NonDeterministicT r n) s
 unify eqs s = do
-  let lnf = (toLongNormalForm *** toLongNormalForm) <$> eqs
+  lnf <- lift . sequence $ (\(a, b) -> (,) <$> a <*> b) . (toLongNormalForm *** toLongNormalForm) <$> eqs
   presolution <- preunify lnf s
-  traceM "already preunified"
-  unify' ((apply presolution *** apply presolution) <$> lnf) presolution
+  Debug.Trace.traceM $ "already preunified: " ++ show presolution
+  result <- unify' ((apply presolution *** apply presolution) <$> lnf) presolution
+  Debug.Trace.traceM "finished"
+  return result
+
 
 unify' :: (Solution s, L.NonDet n)
        => [Equation]
        -> s
        -> GenT MetaVariableName (L.NonDeterministicT r n) s
 unify' equations solution = L.interrupt $ callCC $ \exit -> do
-  simplified <- fixPointOfSimplify $ (normalize *** normalize) <$> equations
-  traceM $ "unify' equations: " ++ show simplified
-  traceM ("unify3: " ++ show (isSolved simplified))
+  normalized <- lift . sequence $ (\(a, b) -> (,) <$> a <*> b) . (normalize *** normalize) <$> equations
+  simplified <- fixPointOfSimplify normalized
+  Debug.Trace.traceM $ "unify' equations: " ++ show simplified
+  Debug.Trace.traceM ("unify' 3: " ++ show (isSolved simplified))
   when (null simplified) $ exit solution
-  (mv, term) <- generateStep (head simplified)
+  (mv, term) <- generateStep =<< L.anyOf simplified
+  -- Debug.Trace.traceM $ "unify' generateStep: " ++ show (mv, term)
   let (newSolution, newEquations) = update mv term solution simplified
+  guard (newEquations /= equations)
   unify' newEquations newSolution
 
 update :: (Solution s) => MetaVariable -> Term -> s -> [Equation] -> (s, [Equation])
@@ -221,9 +233,10 @@ update mv term solution eqs = do
   let thisSolution = add emptySolution mv term
   let newEquations = (apply thisSolution *** apply thisSolution) <$> eqs
   let newSolution = merge thisSolution solution
+  -- let newSolution = add solution mv term
   -- FIXME: verify this
-  -- (newSolution, (getTermType (MetaVar mv), getTermType term) : newEquations)
-  (newSolution, newEquations)
+  (newSolution, (getTermType (MetaVar mv), getTermType term) : newEquations)
+  -- (newSolution, newEquations)
 
 getMaxMetaFreeVar :: [Equation] -> MetaVariableName
 getMaxMetaFreeVar eqs =
@@ -241,43 +254,40 @@ getMetaFreeVars' (App a b _) r       = getMetaFreeVars' b $ getMetaFreeVars' a r
 getMetaFreeVars' (Abs _ body) r      = getMetaFreeVars' body r
 getMetaFreeVars' _ r                 = r
 
+sameName :: Term -> Term -> Bool
+sameName (FreeVar (name1, _)) (FreeVar (name2, _)) | name1 == name2 = True
+sameName (Constant (name1, _)) (Constant (name2, _)) | name1 == name2 = True
+sameName _ _ = False
+
 simplify :: (MonadPlus m, MonadGen MetaVariableName m) => Equation -> m [Equation]
 simplify (t1, t2)
-  | t1 == t2 = return [] -- check for metavars?
+  | t1 == t2 = do
+      -- Debug.Trace.traceM "I am here 0"
+      return [] -- check for metavars?
   | (Abs type1 a) <- t1,
-    (Abs type2 b) <- t2,
-    type1 == type2 = do
+    (Abs type2 b) <- t2 = do
+    -- type1 == type2 = do
       newVar <- gen
       let newCons = FreeVar (newVar, type1)
       let newA = substitute newCons 0 a
       let newB = substitute newCons 0 b
-      simplify (newA, newB)
-      -- newVar <- gen
-      -- let newConsA = FreeVar (newVar, type1)
-      -- let newConsB = FreeVar (newVar, type1)
-      -- let newA = substitute newConsA 0 a
-      -- let newB = substitute newConsB 0 b
-      -- simplify (newA, newB)
-      -- newVar <- gen
-      -- let newCons = MetaVar (newVar, type1)
-      -- let newA = substitute newCons 0 a
-      -- let newB = substitute newCons 0 b
-      -- simplify (newA, newB)
+      -- Debug.Trace.traceM "I am here 2"
+      (:) (type1, type2) <$> simplify (newA, newB)
   | (c1, ctx1) <- getHead t1,
     (c2, ctx2) <- getHead t2,
+    isFreeVarOrConstant c1 && isFreeVarOrConstant c2 = do
     -- c1 == c2 = do
-    (isFreeVarOrConstant c1 && isFreeVarOrConstant c2) = do
-      guard (c1 == c2) -- this can fail the whole process
-      fold <$> mapM simplify (zip ctx1 ctx2) -- faster than using fixPointOfSimplify
+    -- c1 == c2 = do
+      Debug.Trace.traceM $ "I am here 4" ++ show c1 ++ "---" ++ show c2
+      -- guard (c1 == c2) -- this can fail the whole process
+      guard (sameName c1 c2) -- this can fail the whole process
+      Debug.Trace.traceM "I am here 5"
+      (:) (getTermType c1, getTermType c2) <$> fold <$> mapM simplify (zip ctx1 ctx2) -- faster than using fixPointOfSimplify
   | isRigid t1 && isFlexible t2 = trace "rigid-flex" $ return [(t2, t1)]
   | isFlexible t1 && isRigid t2 = trace ("flex-rigid: " ++ show t1 ++ " --- " ++ show t2) $ return [(t1, t2)]
-  -- | isFlexible t1 && isFlexible t2,
-  --   (c1, ctx1) <- getHead t1,
-  --   (c2, ctx2) <- getHead t2,
-  --   c1 == c2 = do
-  --     (:) (c1, c2) <$> fold <$> mapM simplify (zip ctx1 ctx2)
   | isFlexible t1 && isFlexible t2 = trace "flex-flex" $ return [(t1, t2)]
-  | otherwise = trace ("otherwise: " ++ show t1 ++ "---" ++ show t2) mzero
+  -- | otherwise = Debug.Trace.trace ("otherwise: " ++ show t1 ++ "---" ++ show t2) mzero
+  | otherwise = Debug.Trace.trace ("otherwise: " ++ show t1 ++ "---" ++ show t2) $ return [(t1, t2)]
 
 fixPointOfSimplify :: (MonadPlus m, MonadGen MetaVariableName m) => [Equation] -> m [Equation]
 fixPointOfSimplify cs = do
@@ -289,7 +299,6 @@ fixPointOfSimplify cs = do
 isFreeVarOrConstant :: Term -> Bool
 isFreeVarOrConstant (FreeVar _)  = True
 isFreeVarOrConstant (Constant _) = True
--- isFreeVarOrConstant (MetaVar _) = True
 isFreeVarOrConstant _            = False
 
 isRigid :: Term -> Bool
@@ -306,14 +315,14 @@ isVarType _         = True
 {-|
 Tries to non-deterministically solve an equation using projection or imitation.
 -}
-generateStep :: (MonadPlus m, MonadGen MetaVariableName m)
+generateStep :: (MonadPlus m, MonadGen MetaVariableName m, L.NonDet m)
              => Equation
              -> m (MetaVariable, Term)
 generateStep (flex, rigid) | isFlexible flex = do
   let (flexTerm, _) = getHead flex
   flexVariable <- case flexTerm of
                    (MetaVar var) -> return var
-                   _             -> mzero
+                   _             -> L.failure
   let headConstant = getHeadConstant rigid
   let headFreeVar = getHeadFreeVar rigid
   let headMetaVar = getHeadMetaVar rigid
@@ -326,14 +335,14 @@ generateStep (flex, rigid) | isFlexible flex = do
   traceM $ "generateStep rigid: " ++ show rigid
   traceM  $ "generateStep flex: " ++ show flex
   generatedTerm <- generate (getTermType flexTerm) availableTerms
-  traceM $ "generated term: " ++ show flexVariable ++ "---" ++ show generatedTerm
+  Debug.Trace.traceM $ "generated term: " ++ show flexVariable ++ "---" ++ show generatedTerm
   return (flexVariable, generatedTerm)
 generateStep (t1, t2) = fail $ "first term of the equation is not flexible: " ++ show t1 ++ "---" ++ show t2
 
 changeGoal (Abs a b) goal = Abs a (changeGoal b goal)
 changeGoal _ goal = goal
 
-generate :: (MonadPlus m, MonadGen MetaVariableName m)
+generate :: (MonadPlus m, MonadGen MetaVariableName m, L.NonDet m)
          => TermType
          -> [Term]
          -> m Term
@@ -352,7 +361,7 @@ generate varType availableTerms = do
   traceM $ "generate head: " ++ show head ++ " --- " ++ show matchingAssumptions ++ " --- " ++ show matchingTerms
   result <- generateLongTerm assumptions head
   traceM ("generate result: " ++ show result)
-  return $ toLongNormalForm result
+  toLongNormalForm result
 
 generateLongTerm :: (MonadGen MetaVariableName m) => [Variable] -> Term -> m Term
 generateLongTerm lambdas head = do
@@ -395,7 +404,16 @@ getAssumptionsAndGoal t =
         newDeBruijnIndex ((ix, _):_) = ix + 1
 
 getMatchingTerms :: TermType -> [Term] -> [Term]
-getMatchingTerms goal = filter $ (goal ==) . getGoal . getTermType
+-- getMatchingTerms goal = filter $ (goal ==) . getGoal . getTermType
+-- getMatchingTerms goal = id
+-- getMatchingTerms goal = sortBy comparer
+--   where comparer a b =
+--           if getGoal a == goal then LT
+--             else
+--               if getGoal b == goal then GT
+--                 else EQ
+getMatchingTerms goal terms = good ++ bad
+  where (good, bad) = partition ((goal ==) . getGoal . getTermType) terms
 
 getGoal :: TermType -> TermType
 getGoal (Abs _ b) = getGoal b
@@ -407,7 +425,8 @@ foldr fun initValue v = fun v initValue
 
 isSolved :: [Equation] -> Bool
 isSolved [] = True
-isSolved equations = trace "solved" $ and $ uncurry (&&) . (isFlexible *** isFlexible) <$> equations
+isSolved equations = Debug.Trace.trace ("isSolved: " ++ show equations) $
+  and $ uncurry (&&) . (isFlexible *** isFlexible) <$> equations
 
 substitute :: Term -> DeBruijnIndex -> Term -> Term
 substitute new index term = case term of
@@ -436,10 +455,11 @@ raise = raise' 0
           Abs varType body -> Abs varType (raise' (lower + 1) by body)
           v -> v
 
-toLongNormalForm :: Term -> Term
-toLongNormalForm t = let result = normalize . toLongNormalForm' . normalize $ t in
-  trace ("toLongNormalForm result: arg " ++ show t ++ " --- " ++ show result ++ "types:" ++ show (getTermType t == getTermType result))
-  result
+toLongNormalForm :: (L.NonDet m, Monad m) => Term -> m Term
+toLongNormalForm t = do
+  result <- normalize . toLongNormalForm' =<< normalize t
+  traceM $ "toLongNormalForm result: arg " ++ show t ++ " --- " ++ show result ++ "types:" ++ show (getTermType t == getTermType result)
+  return result
 
 toLongNormalForm' :: Term -> Term
 toLongNormalForm' (Abs tType body) = Abs tType $ toLongNormalForm' body
@@ -456,13 +476,16 @@ toLongNormalForm' v = do
           (Var <$> assumptions)
   Data.Foldable.foldr (\a b -> Abs (getTermType a) b) body $ Var <$> assumptions
 
-normalize :: Term -> Term
+normalize :: (L.NonDet m, Monad m) => Term -> m Term
 normalize t = case t of
-  App l r tType -> case normalize l of
-    Abs _ body -> normalize (substitute (normalize r) 0 body)
-    l'         -> App l' (normalize r) $ normalize tType
-  Abs varType body -> Abs (normalize varType) (normalize body)
-  v -> v
+  App l r tType -> do
+    normalizedL <- normalize l
+    case normalizedL of
+      Abs _ body -> L.interrupt $ normalize =<< (\r' -> substitute r' 0 body) <$> normalize r
+      -- Abs _ body -> normalize =<< (\r' -> substitute r' 0 body) <$> normalize r
+      l'         -> App l' <$> normalize r <*> normalize tType
+  Abs varType body -> Abs <$> normalize varType <*> normalize body
+  v -> return v
 
 getHead :: Term -> (Term, [Term])
 getHead t = get t []

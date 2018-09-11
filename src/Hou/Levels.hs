@@ -119,6 +119,10 @@ instance NonDet FML.FMList where
 instance (Computation m, Monad m) => Computation (GenT e m) where
   yield = lift . yield
 
+instance (NonDet m, MonadPlus m) => NonDet (GenT e m) where
+  failure = mzero
+  choice = mplus
+
 empty :: DiffList a
 empty = DiffList { (>>>)=id }
 
@@ -163,12 +167,14 @@ iterDepth step = runLevels . levelIter step
 iterDepthDefault :: (Computation m, NonDet m) => NonDeterministicT a (DepthBounded m) a -> m a
 iterDepthDefault = iterDepth 200
 
-interrupt :: (Alternative a) => a b -> a b
-interrupt v = v <|> Appl.empty
+-- interrupt :: (Alternative a) => a b -> a b
+-- interrupt v = v <|> Appl.empty
+interrupt :: (NonDet a) => a b -> a b
+interrupt v = v `choice` failure
 
-anyOf :: (Alternative m) => [a] -> m a
-anyOf []     = Appl.empty
-anyOf (x:xs) = pure x <|> anyOf xs
+anyOf :: (Appl.Applicative m, NonDet m) => [a] -> m a
+anyOf []     = failure
+anyOf (x:xs) = pure x `choice` anyOf xs
 
 example :: NonDeterministicT r DiffList Int
 example = return 10 <|> return 11 <|> return 100
