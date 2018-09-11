@@ -14,14 +14,14 @@ import           Debug.Trace
 
 spec :: Spec
 spec = do
-  -- describe "infer type of \\lambda x . x" $ do
-  --   it "should return a type of the form x -> x" $ do
-  --     let term = Abs "x" (Just $ VarType 0) $ Var "x" Nothing
-  --     let termsType = Implication (VarType 0) (VarType 0)
+  describe "infer type of \\lambda x . x" $ do
+    it "should return a type of the form x -> x" $ do
+      let term = Abs "x" (Just $ VarType 0) $ Var "x" Nothing
+      let termsType = Implication (VarType 0) (VarType 0)
 
-  --     let result = head . filter ((==) (toTermType termsType)) $ toTermType <$> inferTypes term
+      let result = head . filter ((==) (toTermType termsType)) $ toTermType <$> inferTypes term
 
-  --     result `shouldBe` toTermType termsType
+      result `shouldBe` toTermType termsType
 
   describe "infer type of polymorphic identity" $ do
     it "should return a type of the form forall x . x -> x" $ do

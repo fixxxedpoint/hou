@@ -157,7 +157,7 @@ preunify :: (Solution s, L.NonDet n)
          -> s
          -> GenT MetaVariableName (L.NonDeterministicT r n) s
 preunify eqs s = do
-  eqs' <- lift . sequence $ (\(a, b) -> (,) <$> a <*> b) . (toLongNormalForm *** toLongNormalForm) <$> eqs
+  eqs' <- sequence $ (\(a, b) -> (,) <$> a <*> b) . (toLongNormalForm *** toLongNormalForm) <$> eqs
   preunify' eqs' s
 
 preunify' :: (Solution s, L.NonDet n)
@@ -167,11 +167,12 @@ preunify' :: (Solution s, L.NonDet n)
 preunify' [] solution = trace "preunify []" $ return solution
 preunify' equations solution = L.interrupt $ callCC $ \exit -> do
   -- Debug.Trace.traceM $ "preunify': " ++ show equations
-  normalized <- lift . sequence $ (\(a, b) -> (,) <$> a <*> b) . (normalize *** normalize) <$> equations
+  normalized <- sequence $ (\(a, b) -> (,) <$> a <*> b) . (normalize *** normalize) <$> equations
   simplified <- fixPointOfSimplify normalized
   -- Debug.Trace.traceM $ "preunify' simplified: " ++ show simplified
   when (isSolved simplified) $ exit solution
   flexRigid <- L.anyOf . filter (\(a, b) -> isFlexible a && isRigid b) $ simplified
+  -- let flexRigid = head . filter (\(a, b) -> isFlexible a && isRigid b) $ simplified
   (mv, term) <- generateStep flexRigid
   let (newSolution, newEquations) = update mv term solution simplified
   -- Debug.Trace.traceM $ "preunify' newEquations: " ++ show newEquations
@@ -204,11 +205,11 @@ unify :: (Solution s, L.NonDet n)
       -> s
       -> GenT MetaVariableName (L.NonDeterministicT r n) s
 unify eqs s = do
-  lnf <- lift . sequence $ (\(a, b) -> (,) <$> a <*> b) . (toLongNormalForm *** toLongNormalForm) <$> eqs
+  lnf <- sequence $ (\(a, b) -> (,) <$> a <*> b) . (toLongNormalForm *** toLongNormalForm) <$> eqs
   presolution <- preunify lnf s
-  Debug.Trace.traceM $ "already preunified: " ++ show presolution
+  -- Debug.Trace.traceM $ "already preunified: " ++ show presolution
   result <- unify' ((apply presolution *** apply presolution) <$> lnf) presolution
-  Debug.Trace.traceM "finished"
+  -- Debug.Trace.traceM "finished"
   return result
 
 
@@ -217,12 +218,15 @@ unify' :: (Solution s, L.NonDet n)
        -> s
        -> GenT MetaVariableName (L.NonDeterministicT r n) s
 unify' equations solution = L.interrupt $ callCC $ \exit -> do
-  normalized <- lift . sequence $ (\(a, b) -> (,) <$> a <*> b) . (normalize *** normalize) <$> equations
+  normalized <- sequence $ (\(a, b) -> (,) <$> a <*> b) . (normalize *** normalize) <$> equations
   simplified <- fixPointOfSimplify normalized
-  Debug.Trace.traceM $ "unify' equations: " ++ show simplified
-  Debug.Trace.traceM ("unify' 3: " ++ show (isSolved simplified))
+  -- Debug.Trace.traceM $ "unify' equations: " ++ show simplified
+  -- Debug.Trace.traceM ("unify' 3: " ++ show (isSolved simplified))
   when (null simplified) $ exit solution
+  -- generator <- L.anyOf simplified
+  -- (mv, term) <- generateStep generator
   (mv, term) <- generateStep =<< L.anyOf simplified
+  -- (mv, term) <- generateStep $ head simplified
   -- Debug.Trace.traceM $ "unify' generateStep: " ++ show (mv, term)
   let (newSolution, newEquations) = update mv term solution simplified
   guard (newEquations /= equations)
@@ -273,15 +277,16 @@ simplify (t1, t2)
       let newB = substitute newCons 0 b
       -- Debug.Trace.traceM "I am here 2"
       (:) (type1, type2) <$> simplify (newA, newB)
+      -- simplify (newA, newB)
   | (c1, ctx1) <- getHead t1,
     (c2, ctx2) <- getHead t2,
     isFreeVarOrConstant c1 && isFreeVarOrConstant c2 = do
     -- c1 == c2 = do
     -- c1 == c2 = do
-      Debug.Trace.traceM $ "I am here 4" ++ show c1 ++ "---" ++ show c2
+      -- Debug.Trace.traceM $ "I am here 4" ++ show c1 ++ "---" ++ show c2
       -- guard (c1 == c2) -- this can fail the whole process
       guard (sameName c1 c2) -- this can fail the whole process
-      Debug.Trace.traceM "I am here 5"
+      -- Debug.Trace.traceM "I am here 5"
       (:) (getTermType c1, getTermType c2) <$> fold <$> mapM simplify (zip ctx1 ctx2) -- faster than using fixPointOfSimplify
   | isRigid t1 && isFlexible t2 = trace "rigid-flex" $ return [(t2, t1)]
   | isFlexible t1 && isRigid t2 = trace ("flex-rigid: " ++ show t1 ++ " --- " ++ show t2) $ return [(t1, t2)]
@@ -335,7 +340,7 @@ generateStep (flex, rigid) | isFlexible flex = do
   traceM $ "generateStep rigid: " ++ show rigid
   traceM  $ "generateStep flex: " ++ show flex
   generatedTerm <- generate (getTermType flexTerm) availableTerms
-  Debug.Trace.traceM $ "generated term: " ++ show flexVariable ++ "---" ++ show generatedTerm
+  -- Debug.Trace.traceM $ "generated term: " ++ show flexVariable ++ "---" ++ show generatedTerm
   return (flexVariable, generatedTerm)
 generateStep (t1, t2) = fail $ "first term of the equation is not flexible: " ++ show t1 ++ "---" ++ show t2
 
@@ -425,7 +430,7 @@ foldr fun initValue v = fun v initValue
 
 isSolved :: [Equation] -> Bool
 isSolved [] = True
-isSolved equations = Debug.Trace.trace ("isSolved: " ++ show equations) $
+isSolved equations = trace ("isSolved: " ++ show equations) $
   and $ uncurry (&&) . (isFlexible *** isFlexible) <$> equations
 
 substitute :: Term -> DeBruijnIndex -> Term -> Term

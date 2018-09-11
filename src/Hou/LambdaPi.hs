@@ -168,6 +168,7 @@ solve' c t = iterDepthDefault $ do
   solution <- unifyNonDeterministic equations createListSolution
   Debug.Trace.traceM "solve'"
   result <- normalize $ apply solution termType
+  -- let result = normalize $ apply solution termType
   Debug.Trace.traceM $ show solution
   Debug.Trace.traceM $ show termType
   Debug.Trace.traceM $ show result

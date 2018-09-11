@@ -85,6 +85,7 @@ inferFTerm t = trace ("inferFTerm: " ++ show t) $ do
   traceM $ "inferFTerm 2: " ++ show resultType
   -- traceM $ "inferFTerm 3: " ++ show (H.normalize $ H.apply solution resultType)
   toFTermType <$> (H.normalize $ H.apply solution resultType)
+  -- return $ toFTermType (H.normalize $ H.apply solution resultType)
 
 {-|
 Maps a typing problem of a term of SystemF onto a formula of higher-order unification.
