@@ -134,7 +134,7 @@ instance Solution ListSolution where
   apply s@(LS [(mv1@(mv1Name, _), term)]) t@(MetaVar mv2@(mv2Name, tType)) | mv1Name == mv2Name = trace "5.1" term
                                                                            | otherwise = trace "5.2" t
   apply (LS (s:rest)) t = trace "6" $ apply (LS [s]) $ apply (LS rest) t
-  apply _ t = trace "7" t
+  -- apply _ t = trace "7" t
 
 {-|
 Preunification algorithm tries to solve a given list of equations, returning a solution when all of
@@ -175,8 +175,8 @@ preunify' equations solution = L.interrupt $ callCC $ \exit -> do
   simplified <- fixPointOfSimplify normalized
   -- Debug.Trace.traceM $ "preunify' simplified: " ++ show simplified
   when (isSolved simplified) $ exit solution
-  flexRigid <- L.anyOf . filter (\(a, b) -> isFlexible a && isRigid b) $ simplified
-  -- let flexRigid = head . filter (\(a, b) -> isFlexible a && isRigid b) $ simplified
+  -- flexRigid <- L.anyOf . filter (\(a, b) -> isFlexible a && isRigid b) $ simplified
+  let flexRigid = head . filter (\(a, b) -> isFlexible a && isRigid b) $ simplified
   (mv, term) <- generateStep flexRigid
   let (newSolution, newEquations) = update mv term solution simplified
   -- Debug.Trace.traceM $ "preunify' newEquations: " ++ show newEquations
@@ -224,14 +224,12 @@ unify' :: (Solution s, L.NonDet n)
 unify' equations solution = L.interrupt $ callCC $ \exit -> do
   normalized <- sequence $ (\(a, b) -> (,) <$> a <*> b) . (normalize *** normalize) <$> equations
   simplified <- fixPointOfSimplify normalized
-  -- Debug.Trace.traceM $ "unify' equations: " ++ show simplified
+  Debug.Trace.traceM $ "unify' equations: " ++ show simplified
   -- Debug.Trace.traceM ("unify' 3: " ++ show (isSolved simplified))
   when (null simplified) $ exit solution
-  -- generator <- L.anyOf simplified
-  -- (mv, term) <- generateStep generator
   (mv, term) <- generateStep =<< L.anyOf simplified
   -- (mv, term) <- generateStep $ head simplified
-  -- Debug.Trace.traceM $ "unify' generateStep: " ++ show (mv, term)
+  Debug.Trace.traceM $ "unify' generateStep: " ++ show (mv, term)
   let (newSolution, newEquations) = update mv term solution simplified
   guard (newEquations /= equations)
   unify' newEquations newSolution

@@ -47,12 +47,12 @@ spec = do
       -- let expected = Abs (Constant ("T",starType)) (Abs (App (FreeVar (1,Uni)) (Var (0,Constant ("T",starType))) Uni) (Constant ("T",starType)))
 
 
+      -- TODO: randomizowany algorytm dla quorow
       let result = solvePiTerm ctx term
 
       traceM $ (show $ head result)
 
-      1 `shouldBe` 1
-      -- result `shouldNotBe` []
+      result `shouldNotBe` []
       -- filter (expected ==) result `shouldNotBe` []
       -- filter ((==) expected) result `shouldNotBe` []
 

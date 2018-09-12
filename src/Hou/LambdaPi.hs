@@ -162,14 +162,14 @@ solvePiTerm c = FML.toList . solve' c
 solve' :: (Context c FreeVarName PiTermType) => c -> PiTerm -> FML.FMList PiTermType
 solve' c t = iterDepthDefault $ do
   (termType, equations) <- maybe failure return $ typeOf c t
-  traceM $ show termType
-  traceM "---"
-  traceM $ show equations
+  -- traceM $ show termType
+  -- traceM "---"
+  -- traceM $ show equations
   solution <- unifyNonDeterministic equations createListSolution
-  Debug.Trace.traceM "solve'"
+  -- Debug.Trace.traceM "solve'"
   result <- normalize $ apply solution termType
   -- let result = normalize $ apply solution termType
-  Debug.Trace.traceM $ show solution
-  Debug.Trace.traceM $ show termType
+  -- Debug.Trace.traceM $ show solution
+  -- Debug.Trace.traceM $ show termType
   Debug.Trace.traceM $ show result
   return result

@@ -1,4 +1,4 @@
--- {-# OPTIONS_GHC -F -pgmF hspec-discover #-}
+{-# OPTIONS_GHC -F -pgmF hspec-discover #-}
 
 {-|
 Module      : Main
@@ -21,8 +21,8 @@ main = hspec spec
 
 spec :: Spec
 spec = do
-  -- describe "HigherOrderUnification" Hou.HigherOrderUnificationSpec.spec
+  describe "HigherOrderUnification" Hou.HigherOrderUnificationSpec.spec
   describe "LambdaPi" Hou.LambdaPiSpec.spec
-  -- describe "Levels" Hou.LevelsSpec.spec
-  -- describe "MixedPrefix" Hou.MixedPrefixSpec.spec
+  describe "Levels" Hou.LevelsSpec.spec
+  describe "MixedPrefix" Hou.MixedPrefixSpec.spec
   describe "SystemF" Hou.SystemFSpec.spec
