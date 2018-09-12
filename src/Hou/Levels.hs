@@ -17,6 +17,7 @@ License     : MIT, see the file LICENSE
 module Hou.Levels where
 
 import           Hou.Trace
+import qualified Debug.Trace
 
 import           Control.Applicative as Appl
 import           Control.Monad.Cont
@@ -32,22 +33,15 @@ newtype DiffList a = DiffList { (>>>) :: [a] -> [a] }
 
 newtype Levels n a = Levels { levels :: [n a] }
 
-newtype DepthBounded n a = DepthBounded {
-                             (!) :: Integer     -- ^ current depth
-                                 -> (n a, Bool) -- ^ result and a bool indicator of whether it
-                                                --   reached the bottom of the computation
-                           }
+newtype DepthBounded n a = DepthBounded { (!) :: Integer -> n a }
 
 newtype NonDeterministicT r (m :: * -> *) a = NDT { (!!>) :: ContT r m a }
   deriving (Functor, Applicative, Monad, MonadCont, MonadTrans)
 
 instance (NonDet n) => NonDet (DepthBounded n) where
-  failure = DepthBounded . const $ (failure, True)
-  choice a b = DepthBounded $ \d -> if d == 0 then (failure, False)
-                                    else do
-                                           let (rA, contA) = a ! (d-1)
-                                           let (rB, contB) = b ! (d-1)
-                                           (choice rA rB, contA && contB)
+  failure = DepthBounded . const $ failure
+  choice a b = DepthBounded $ \d -> if d == 0 then failure
+                                    else choice (a ! (d-1)) (b ! (d-1))
 
 instance (NonDet m) => MonadPlus (NonDeterministicT r m) where
   mzero = NDT . ContT . const $ failure
@@ -119,10 +113,6 @@ instance NonDet FML.FMList where
 instance (Computation m, Monad m) => Computation (GenT e m) where
   yield = lift . yield
 
-instance (NonDet m, MonadPlus m) => NonDet (GenT e m) where
-  failure = mzero
-  choice = mplus
-
 empty :: DiffList a
 empty = DiffList { (>>>)=id }
 
@@ -145,17 +135,13 @@ levelIter :: (Computation m, NonDet m)
           => Integer
           -> NonDeterministicT a (DepthBounded m) a
           -> Levels m a
-levelIter step c = do
-  let levelValues = [ (runContT . (!!>) $ c) yieldB ! d | d <- [0,step..] ]
-  let (notFinished, afterFinished) = span (\(_, finished) -> not finished) levelValues
+levelIter step c =
   Levels {
-    levels = fst <$> notFinished ++ take 1 afterFinished
+    levels = [ (runContT . (!!>) $ c) yieldB ! d | d <- [0,step..] ]
   }
   where yieldB x =
           DepthBounded {
-            (!) = \d -> trace ("levelIter: " ++ show d) $
-                          if d < step then trace "yielding"  (yield x, True)
-                                      else trace "levelIter" (failure, True)
+            (!) = \d -> trace ("levelIter: " ++ show d) $ if d < step then Debug.Trace.trace "yielding" $ yield x else trace "levelIter" failure
           }
 
 iterDepth :: (Computation m, NonDet m)
@@ -167,14 +153,16 @@ iterDepth step = runLevels . levelIter step
 iterDepthDefault :: (Computation m, NonDet m) => NonDeterministicT a (DepthBounded m) a -> m a
 iterDepthDefault = iterDepth 200
 
--- interrupt :: (Alternative a) => a b -> a b
--- interrupt v = v <|> Appl.empty
-interrupt :: (NonDet a) => a b -> a b
+interrupt :: (NonDet m) => m b -> m b
 interrupt v = v `choice` failure
 
-anyOf :: (Appl.Applicative m, NonDet m) => [a] -> m a
+anyOf :: (Applicative m, NonDet m) => [a] -> m a
 anyOf []     = failure
 anyOf (x:xs) = pure x `choice` anyOf xs
 
 example :: NonDeterministicT r DiffList Int
 example = return 10 <|> return 11 <|> return 100
+
+instance (NonDet m, MonadPlus m) => NonDet (GenT e m) where
+  failure = mzero
+  choice = mplus

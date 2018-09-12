@@ -127,9 +127,13 @@ instance Solution ListSolution where
   apply (LS []) t = trace "1" t
   apply s (App t1 t2 appType) = trace "2" $ App (apply s t1) (apply s t2) (apply s appType)
   apply s (Abs absType term) = trace "3" $ Abs (apply s absType) (apply s term)
+  apply s (Constant (name, cType))  = Constant (name, apply s cType)
+  apply s (Var (name, vType)) = Var (name, apply s vType)
+  apply s (FreeVar (name, fType)) = FreeVar (name, apply s fType)
+  apply s Uni = Uni
   apply s@(LS [(mv1@(mv1Name, _), term)]) t@(MetaVar mv2@(mv2Name, tType)) | mv1Name == mv2Name = trace "5.1" term
                                                                            | otherwise = trace "5.2" t
-  apply (LS (s:rest)) t@(MetaVar _) = trace "6" $ apply (LS [s]) $ apply (LS rest) t
+  apply (LS (s:rest)) t = trace "6" $ apply (LS [s]) $ apply (LS rest) t
   apply _ t = trace "7" t
 
 {-|
@@ -209,7 +213,7 @@ unify eqs s = do
   presolution <- preunify lnf s
   -- Debug.Trace.traceM $ "already preunified: " ++ show presolution
   result <- unify' ((apply presolution *** apply presolution) <$> lnf) presolution
-  -- Debug.Trace.traceM "finished"
+  Debug.Trace.traceM "finished"
   return result
 
 

@@ -21,14 +21,14 @@ import           Debug.Trace
 --       1 `shouldBe` 1
 
 spec = do
-  -- describe "infere type for a term of the form \\lambda x . x" $ do
-  --   it "should return some type" $ do
-  --     let term = Abs Uni (Var (0, Uni))
+  describe "infere type for a term of the form \\lambda x . x" $ do
+    it "should return some type" $ do
+      let term = Abs Uni (Var (0, Uni))
 
-  --     let result = solvePiTerm createMapContext term
-  --     traceM $ show $ head result
+      let result = solvePiTerm createMapContext term
+      traceM $ show $ head result
 
-  --     result `shouldNotBe` []
+      result `shouldNotBe` []
 
   describe "infere type for a term of the form \\lambda x . Fx, where F is of type \\lambda x . Px and P is \\lambda T . *" $ do
     it "should return some type" $ do
