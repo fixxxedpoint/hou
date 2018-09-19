@@ -38,7 +38,8 @@ module Hou.HigherOrderUnification(
   getHead,
   substitute,
   substituteFV,
-  raise
+  raise,
+  isClosed
   )
   where
 
@@ -172,11 +173,13 @@ preunify' [] solution = trace "preunify []" $ return solution
 preunify' equations solution = L.interrupt $ callCC $ \exit -> do
   -- Debug.Trace.traceM $ "preunify': " ++ show equations
   normalized <- sequence $ (\(a, b) -> (,) <$> a <*> b) . (normalize *** normalize) <$> equations
+  Debug.Trace.traceM $ "are closed: " ++ show (and $ isClosed <$> [eq | (a, b) <- normalized, eq <- [a, b]])
   simplified <- fixPointOfSimplify normalized
   -- Debug.Trace.traceM $ "preunify' simplified: " ++ show simplified
   when (isSolved simplified) $ exit solution
   -- flexRigid <- L.anyOf . filter (\(a, b) -> isFlexible a && isRigid b) $ simplified
   let flexRigid = head . filter (\(a, b) -> isFlexible a && isRigid b) $ simplified
+  -- Debug.Trace.traceM $ "preunify' flexRigid: " ++ show flexRigid
   (mv, term) <- generateStep flexRigid
   let (newSolution, newEquations) = update mv term solution simplified
   -- Debug.Trace.traceM $ "preunify' newEquations: " ++ show newEquations
@@ -224,12 +227,12 @@ unify' :: (Solution s, L.NonDet n)
 unify' equations solution = L.interrupt $ callCC $ \exit -> do
   normalized <- sequence $ (\(a, b) -> (,) <$> a <*> b) . (normalize *** normalize) <$> equations
   simplified <- fixPointOfSimplify normalized
-  Debug.Trace.traceM $ "unify' equations: " ++ show simplified
+  -- Debug.Trace.traceM $ "unify' equations: " ++ show simplified
   -- Debug.Trace.traceM ("unify' 3: " ++ show (isSolved simplified))
   when (null simplified) $ exit solution
   (mv, term) <- generateStep =<< L.anyOf simplified
   -- (mv, term) <- generateStep $ head simplified
-  Debug.Trace.traceM $ "unify' generateStep: " ++ show (mv, term)
+  -- Debug.Trace.traceM $ "unify' generateStep: " ++ show (mv, term)
   let (newSolution, newEquations) = update mv term solution simplified
   guard (newEquations /= equations)
   unify' newEquations newSolution
@@ -254,11 +257,14 @@ getMetavarId (ix, _) = ix
 getMetaFreeVars :: Term -> [MetaVariableName]
 getMetaFreeVars t = getMetaFreeVars' t []
 getMetaFreeVars' :: Term -> [MetaVariableName] -> [MetaVariableName]
-getMetaFreeVars' (MetaVar (metaVar, _)) r = metaVar : r
-getMetaFreeVars' (FreeVar (freeVar, _)) r = freeVar : r
-getMetaFreeVars' (App a b _) r       = getMetaFreeVars' b $ getMetaFreeVars' a r
-getMetaFreeVars' (Abs _ body) r      = getMetaFreeVars' body r
-getMetaFreeVars' _ r                 = r
+getMetaFreeVars' t r = case t of
+  (MetaVar (metaVar, mvType)) -> getMetaFreeVars' mvType $ metaVar : r
+  (Constant (_, consType))    -> getMetaFreeVars' consType r
+  (Var (_, varType))          -> getMetaFreeVars' varType r
+  (FreeVar (freeVar, fvType)) -> getMetaFreeVars' fvType $ freeVar : r
+  (App a b appType)           -> getMetaFreeVars' appType $ getMetaFreeVars' b $ getMetaFreeVars' a r
+  (Abs absType body)          -> getMetaFreeVars' absType $ getMetaFreeVars' body r
+  _                           -> r
 
 sameName :: Term -> Term -> Bool
 sameName (FreeVar (name1, _)) (FreeVar (name2, _)) | name1 == name2 = True
@@ -270,16 +276,17 @@ simplify (t1, t2)
   | t1 == t2 = do
       -- Debug.Trace.traceM "I am here 0"
       return [] -- check for metavars?
-  | (Abs type1 a) <- t1,
-    (Abs type2 b) <- t2 = do
-    -- type1 == type2 = do
-      newVar <- gen
-      let newCons = FreeVar (newVar, type1)
-      let newA = substitute newCons 0 a
-      let newB = substitute newCons 0 b
-      -- Debug.Trace.traceM "I am here 2"
-      (:) (type1, type2) <$> simplify (newA, newB)
-      -- simplify (newA, newB)
+  -- TODO | try to avoid this cuz it is also changing free variables in types
+  -- | (Abs type1 a) <- t1,
+  --   (Abs type2 b) <- t2 = do
+  --   -- type1 == type2 = do
+  --     newVar <- gen
+  --     let newCons = FreeVar (newVar, type1)
+  --     let newA = substitute newCons 0 a
+  --     let newB = substitute newCons 0 b
+  --     -- Debug.Trace.traceM "I am here 2"
+  --     (:) (type1, type2) <$> simplify (newA, newB)
+  --     -- simplify (newA, newB)
   | (c1, ctx1) <- getHead t1,
     (c2, ctx2) <- getHead t2,
     isFreeVarOrConstant c1 && isFreeVarOrConstant c2 = do
@@ -295,6 +302,7 @@ simplify (t1, t2)
   | isFlexible t1 && isFlexible t2 = trace "flex-flex" $ return [(t1, t2)]
   -- | otherwise = Debug.Trace.trace ("otherwise: " ++ show t1 ++ "---" ++ show t2) mzero
   | otherwise = Debug.Trace.trace ("otherwise: " ++ show t1 ++ "---" ++ show t2) $ return [(t1, t2)]
+  -- | otherwise = fail "otherwise"
 
 fixPointOfSimplify :: (MonadPlus m, MonadGen MetaVariableName m) => [Equation] -> m [Equation]
 fixPointOfSimplify cs = do
@@ -330,17 +338,18 @@ generateStep (flex, rigid) | isFlexible flex = do
   flexVariable <- case flexTerm of
                    (MetaVar var) -> return var
                    _             -> L.failure
-  let headConstant = getHeadConstant rigid
-  let headFreeVar = getHeadFreeVar rigid
-  let headMetaVar = getHeadMetaVar rigid
-  let availableTerms = (FreeVar <$> maybeToList headFreeVar) ++
-                       (Constant <$> maybeToList headConstant) ++
-                       (filter (/= flexTerm) $ MetaVar <$> maybeToList headMetaVar)
+  let rigidHead = fst . getHead $ rigid
+  let headConstant = getHeadConstant rigidHead
+  let headFreeVar  = getHeadFreeVar rigidHead
+  let headMetaVar  = getHeadMetaVar rigidHead
+  let availableTerms = (Constant <$> maybeToList headConstant) ++
+                       (filter (/= flexTerm) $ MetaVar <$> maybeToList headMetaVar) ++
+                       (FreeVar <$> maybeToList headFreeVar)
   traceM $ "before generate: " ++ show headConstant
   traceM $ "before generate head FreeVar: " ++ show headFreeVar
   traceM $ "before generate available terms: " ++ show availableTerms
-  traceM $ "generateStep rigid: " ++ show rigid
-  traceM  $ "generateStep flex: " ++ show flex
+  -- Debug.Trace.traceM $ "generateStep rigid: " ++ show rigid
+  -- Debug.Trace.traceM  $ "generateStep flex: " ++ show flex
   generatedTerm <- generate (getTermType flexTerm) availableTerms
   -- Debug.Trace.traceM $ "generated term: " ++ show flexVariable ++ "---" ++ show generatedTerm
   return (flexVariable, generatedTerm)
@@ -365,6 +374,7 @@ generate varType availableTerms = do
   traceM ("generate: " ++ show matchingAssumptions)
   traceM $ "is empty :" ++ show (null (matchingTerms ++ matchingAssumptions))
   head <- L.anyOf $ matchingAssumptions ++ matchingTerms
+  -- head <- L.anyOf $ matchingTerms ++ matchingAssumptions
   traceM $ "generate head: " ++ show head ++ " --- " ++ show matchingAssumptions ++ " --- " ++ show matchingTerms
   result <- generateLongTerm assumptions head
   traceM ("generate result: " ++ show result)
@@ -437,12 +447,15 @@ isSolved equations = trace ("isSolved: " ++ show equations) $
 
 substitute :: Term -> DeBruijnIndex -> Term -> Term
 substitute new index term = case term of
-  v@(Var (deBruijnIndex, varType)) -> case compare deBruijnIndex index of
-    LT -> v
+  (Var (deBruijnIndex, varType)) -> case compare deBruijnIndex index of
+    LT -> Var (deBruijnIndex, substitute new index varType)
     EQ -> new
-    GT -> Var (deBruijnIndex-1, varType)
-  App a b termType -> App (substitute new index a) (substitute new index b) termType
-  Abs termType a -> Abs termType (substitute (raise 1 new) (index+1) a)
+    GT -> Var (deBruijnIndex-1, substitute new index varType)
+  App a b termType -> App (substitute new index a) (substitute new index b) (substitute new index termType)
+  Abs termType a -> Abs (substitute new index termType) (substitute (raise 1 new) (index+1) a)
+  MetaVar (name, mvType) -> MetaVar (name, substitute new index mvType)
+  Constant (name, consType) -> Constant (name, substitute new index consType)
+  FreeVar (name, fvType) -> FreeVar (name, substitute new index fvType)
   _ -> term
 
 substituteFV :: Term -> FreeVariable -> Term -> Term
@@ -497,24 +510,28 @@ normalize t = case t of
 getHead :: Term -> (Term, [Term])
 getHead t = get t []
   where get (App a b _) ctx = get a (b : ctx)
+        get (Abs _ body) ctx = get body ctx
         get tt          ctx = (tt, ctx)
 
 getHeadConstant :: Term -> Maybe Constant
 getHeadConstant t = case t of
-  (Constant constant) -> Just constant
-  (App m _ _)         -> getHeadConstant m
+  Constant constant -> Just constant
+  -- App m _ _         -> getHeadConstant m
+  -- Abs _ body        -> getHeadConstant body
   _                   -> Nothing
 
 getHeadFreeVar :: Term -> Maybe Variable
 getHeadFreeVar t = case t of
-  (FreeVar var) -> Just var
-  (App m _ _)   -> getHeadFreeVar m
+  FreeVar var -> Just var
+  -- App m _ _   -> getHeadFreeVar m
+  -- Abs _ body  -> getHeadFreeVar body
   _             -> Nothing
 
 getHeadMetaVar :: Term -> Maybe MetaVariable
 getHeadMetaVar t = case t of
-  (MetaVar var) -> Just var
-  (App m _ _)   -> getHeadMetaVar m
+  MetaVar var -> Just var
+  -- App m _ _   -> getHeadMetaVar m
+  -- Abs _ body  -> getHeadMetaVar body
   _             -> Nothing
 
 getTermType :: Term -> TermType
@@ -536,3 +553,16 @@ isLongNormalForm t = case getTermType t of
     case head of
       (Abs _ _) -> False
       _         -> and $ isLongNormalForm <$> apps
+
+isClosed :: Term -> Bool
+isClosed = isClosed' 0
+isClosed' :: DeBruijnIndex -> Term -> Bool
+isClosed' max t = case t of
+  MetaVar (_, mvType) -> isClosed' max mvType
+  Constant (_, consType) -> isClosed' max consType
+  Var (name, varType) -> (name < max) && isClosed' max varType
+  FreeVar (_, fvType) -> isClosed' max fvType
+  App t1 t2 appType -> isClosed' max t1 && isClosed' max t2 && isClosed' max appType
+  Abs absType body -> isClosed' max absType && isClosed' (max+1) body
+  Uni -> True
+

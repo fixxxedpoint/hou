@@ -141,7 +141,10 @@ levelIter step c =
   }
   where yieldB x =
           DepthBounded {
-            (!) = \d -> trace ("levelIter: " ++ show d) $ if d < step then Debug.Trace.trace "yielding" $ yield x else trace "levelIter" failure
+            (!) = \d -> trace ("levelIter: " ++ show d) $
+                    if d < step
+                    then trace "yielding" $ yield x
+                    else trace "levelIter" failure
           }
 
 iterDepth :: (Computation m, NonDet m)
