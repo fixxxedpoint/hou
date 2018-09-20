@@ -52,11 +52,12 @@ spec = do
       let tType = Constant ("T", starType)
       let fv1Type = Abs tType starType
       let fv1Term = Constant ("P", fv1Type)
+      -- FIXME: this type looks wrong
       let fv0Type =
             buildImplication
-              (buildImplication tType (Abs tType (buildImplication (App fv1Term (Var (0, tType)) starType) (Abs (App fv1Term (Var (0, tType)) starType) tType))))
+              (buildImplication tType (Abs tType (buildImplication (App fv1Term (Var (0, tType)) starType) (Abs (App fv1Term (Var (0, tType)) starType) (App fv1Term (Var (1, tType)) starType)))))
 
-              (Abs (buildImplication tType (Abs tType (buildImplication (App fv1Term (Var (0, tType)) starType) (Abs (App fv1Term (Var (0, tType)) starType) tType)))) tType)
+              (Abs (buildImplication tType (Abs tType (buildImplication (App fv1Term (Var (0, tType)) starType) (Abs (App fv1Term (Var (0, tType)) starType) (App fv1Term (Var (1, tType)) starType))))) tType)
 
       Debug.Trace.traceM $ "fv0Type: " ++ show fv0Type
       let term =
