@@ -1,4 +1,4 @@
-{-# LANGUAGE FlexibleContexts      #-}
+{-# LANGUAGE FlexibleContexts #-}
 
 -- TODO: implement Zaionc's remark regarding regular unification trees, e.g. fail if given a term of
 -- the form ( X a ) = ( f ( X a )) we generate a term of the form ( H a ) = ( f ( H a )) (it
@@ -173,7 +173,7 @@ preunify' [] solution = trace "preunify []" $ return solution
 preunify' equations solution = L.interrupt $ callCC $ \exit -> do
   -- Debug.Trace.traceM $ "preunify': " ++ show equations
   normalized <- sequence $ (\(a, b) -> (,) <$> a <*> b) . (normalize *** normalize) <$> equations
-  Debug.Trace.traceM $ "are closed: " ++ show (and $ isClosed <$> [eq | (a, b) <- normalized, eq <- [a, b]])
+  -- Debug.Trace.traceM $ "are closed: " ++ show (and $ isClosed <$> [eq | (a, b) <- normalized, eq <- [a, b]])
   simplified <- fixPointOfSimplify normalized
   -- Debug.Trace.traceM $ "preunify' simplified: " ++ show simplified
   when (isSolved simplified) $ exit solution
@@ -276,6 +276,7 @@ simplify (t1, t2)
   | t1 == t2 = do
       -- Debug.Trace.traceM "I am here 0"
       return [] -- check for metavars?
+  -- | not (isClosed t1 && isClosed t2) = return []
   -- TODO | try to avoid this cuz it is also changing free variables in types
   -- | (Abs type1 a) <- t1,
   --   (Abs type2 b) <- t2 = do
@@ -301,7 +302,7 @@ simplify (t1, t2)
   | isFlexible t1 && isRigid t2 = trace ("flex-rigid: " ++ show t1 ++ " --- " ++ show t2) $ return [(t1, t2)]
   | isFlexible t1 && isFlexible t2 = trace "flex-flex" $ return [(t1, t2)]
   -- | otherwise = Debug.Trace.trace ("otherwise: " ++ show t1 ++ "---" ++ show t2) mzero
-  | otherwise = Debug.Trace.trace ("otherwise: " ++ show t1 ++ "---" ++ show t2) $ return [(t1, t2)]
+  | otherwise = trace ("otherwise: " ++ show t1 ++ "---" ++ show t2) $ return [(t1, t2)]
   -- | otherwise = fail "otherwise"
 
 fixPointOfSimplify :: (MonadPlus m, MonadGen MetaVariableName m) => [Equation] -> m [Equation]
@@ -338,10 +339,9 @@ generateStep (flex, rigid) | isFlexible flex = do
   flexVariable <- case flexTerm of
                    (MetaVar var) -> return var
                    _             -> L.failure
-  let rigidHead = fst . getHead $ rigid
-  let headConstant = getHeadConstant rigidHead
-  let headFreeVar  = getHeadFreeVar rigidHead
-  let headMetaVar  = getHeadMetaVar rigidHead
+  let headConstant = getHeadConstant rigid
+  let headFreeVar  = getHeadFreeVar rigid
+  let headMetaVar  = getHeadMetaVar rigid
   let availableTerms = (Constant <$> maybeToList headConstant) ++
                        (filter (/= flexTerm) $ MetaVar <$> maybeToList headMetaVar) ++
                        (FreeVar <$> maybeToList headFreeVar)
@@ -448,15 +448,26 @@ isSolved equations = trace ("isSolved: " ++ show equations) $
 substitute :: Term -> DeBruijnIndex -> Term -> Term
 substitute new index term = case term of
   (Var (deBruijnIndex, varType)) -> case compare deBruijnIndex index of
-    LT -> Var (deBruijnIndex, substitute new index varType)
+    LT -> Var (deBruijnIndex, varType)
     EQ -> new
-    GT -> Var (deBruijnIndex-1, substitute new index varType)
-  App a b termType -> App (substitute new index a) (substitute new index b) (substitute new index termType)
-  Abs termType a -> Abs (substitute new index termType) (substitute (raise 1 new) (index+1) a)
-  MetaVar (name, mvType) -> MetaVar (name, substitute new index mvType)
-  Constant (name, consType) -> Constant (name, substitute new index consType)
-  FreeVar (name, fvType) -> FreeVar (name, substitute new index fvType)
+    GT -> Var (deBruijnIndex-1, varType)
+  App a b termType -> App (substitute new index a) (substitute new index b) termType
+  Abs termType a -> Abs termType (substitute (raise 1 new) (index+1) a)
+  MetaVar (name, mvType) -> MetaVar (name,  mvType)
+  Constant (name, consType) -> Constant (name, consType)
+  FreeVar (name, fvType) -> FreeVar (name, fvType)
   _ -> term
+-- substitute new index term = case term of
+--   (Var (deBruijnIndex, varType)) -> case compare deBruijnIndex index of
+--     LT -> Var (deBruijnIndex, substitute new index varType)
+--     EQ -> new
+--     GT -> Var (deBruijnIndex-1, substitute new index varType)
+--   App a b termType -> App (substitute new index a) (substitute new index b) (substitute new index termType)
+--   Abs termType a -> Abs (substitute new index termType) (substitute (raise 1 new) (index+1) a)
+--   MetaVar (name, mvType) -> MetaVar (name, substitute new index mvType)
+--   Constant (name, consType) -> Constant (name, substitute new index consType)
+--   FreeVar (name, fvType) -> FreeVar (name, substitute new index fvType)
+--   _ -> term
 
 substituteFV :: Term -> FreeVariable -> Term -> Term
 substituteFV new fv@(ix, fvType) term | fvType == getTermType new = case term of
@@ -475,37 +486,21 @@ raise = raise' 0
           Abs varType body -> Abs varType (raise' (lower + 1) by body)
           v -> v
 
-toLongNormalForm :: (L.NonDet m, Monad m) => Term -> m Term
-toLongNormalForm t = do
-  result <- normalize . toLongNormalForm' =<< normalize t
-  traceM $ "toLongNormalForm result: arg " ++ show t ++ " --- " ++ show result ++ "types:" ++ show (getTermType t == getTermType result)
-  return result
-
-toLongNormalForm' :: Term -> Term
-toLongNormalForm' (Abs tType body) = Abs tType $ toLongNormalForm' body
-toLongNormalForm' (App t1 t2 termType) = App (toLongNormalForm' t1) (toLongNormalForm' t2) termType
-toLongNormalForm' v = do
-  let (assumptions, _) = getAssumptionsAndGoal . getTermType $ v
-  let newVar = case v of
-        (Var (ix, termType)) -> Var (ix + length assumptions, termType)
-        _                    -> v
-  let body =
-        Data.Foldable.foldl
-          (\b a -> let (Abs _ tType) = getTermType b in App b (toLongNormalForm' a) tType)
-          newVar
-          (Var <$> assumptions)
-  Data.Foldable.foldr (\a b -> Abs (getTermType a) b) body $ Var <$> assumptions
-
 normalize :: (L.NonDet m, Monad m) => Term -> m Term
 normalize t = case t of
   App l r tType -> do
     normalizedL <- normalize l
     case normalizedL of
-      Abs _ body -> L.interrupt $ normalize =<< (\r' -> substitute r' 0 body) <$> normalize r
+      Abs _ body -> L.interrupt $ normalize (substitute r 0 body)
+      -- Abs _ body -> L.interrupt $ normalize =<< (\r' -> substitute r' 0 body) <$> normalize r
       -- Abs _ body -> normalize =<< (\r' -> substitute r' 0 body) <$> normalize r
       l'         -> App l' <$> normalize r <*> normalize tType
   Abs varType body -> Abs <$> normalize varType <*> normalize body
-  v -> return v
+  Uni -> return Uni
+  -- _ -> return t
+  _ -> do
+    let vType = getTermType t
+    setVarType t <$> (normalize vType)
 
 getHead :: Term -> (Term, [Term])
 getHead t = get t []
@@ -514,24 +509,18 @@ getHead t = get t []
         get tt          ctx = (tt, ctx)
 
 getHeadConstant :: Term -> Maybe Constant
-getHeadConstant t = case t of
+getHeadConstant t = case (fst . getHead $ t) of
   Constant constant -> Just constant
-  -- App m _ _         -> getHeadConstant m
-  -- Abs _ body        -> getHeadConstant body
   _                   -> Nothing
 
 getHeadFreeVar :: Term -> Maybe Variable
-getHeadFreeVar t = case t of
+getHeadFreeVar t = case (fst . getHead $ t) of
   FreeVar var -> Just var
-  -- App m _ _   -> getHeadFreeVar m
-  -- Abs _ body  -> getHeadFreeVar body
   _             -> Nothing
 
 getHeadMetaVar :: Term -> Maybe MetaVariable
-getHeadMetaVar t = case t of
+getHeadMetaVar t = case (fst . getHead $ t) of
   MetaVar var -> Just var
-  -- App m _ _   -> getHeadMetaVar m
-  -- Abs _ body  -> getHeadMetaVar body
   _             -> Nothing
 
 getTermType :: Term -> TermType
@@ -543,6 +532,14 @@ getTermType (App _ _ t)       = t
 getTermType (Abs t body)      = Abs t $ getTermType body -- Pi t $ getTermType body
 getTermType Uni               = Uni
 
+setVarType :: Term -> TermType -> Term
+setVarType t newType = case t of
+  MetaVar (name, _) -> MetaVar (name, newType)
+  Constant (name, _) -> Constant (name, newType)
+  Var (name, _) -> Var (name, newType)
+  FreeVar (name, _) -> FreeVar (name, newType)
+  _ -> t
+
 isLongNormalForm :: Term -> Bool
 isLongNormalForm t = case getTermType t of
   (Abs t1 t2) -> case t of
@@ -553,6 +550,29 @@ isLongNormalForm t = case getTermType t of
     case head of
       (Abs _ _) -> False
       _         -> and $ isLongNormalForm <$> apps
+
+toLongNormalForm :: (L.NonDet m, Monad m) => Term -> m Term
+toLongNormalForm t = do
+  result <- normalize . toLongNormalForm' =<< normalize t
+  traceM $ "toLongNormalForm result: arg " ++ show t ++ " --- " ++ show result ++ "types:" ++ show (getTermType t == getTermType result)
+  return result
+
+toLongNormalForm' :: Term -> Term
+toLongNormalForm' (Abs tType body) = Abs (toLongNormalForm' tType) (toLongNormalForm' body)
+toLongNormalForm' (App t1 t2 termType) = App (toLongNormalForm' t1) (toLongNormalForm' t2) (toLongNormalForm' termType)
+toLongNormalForm' v = do
+  let (assumptions, _) = getAssumptionsAndGoal . getTermType $ v
+  let newVar = case v of
+        (Var (ix, termType)) -> Var (ix + length assumptions, toLongNormalForm' termType)
+        _                    -> do
+          let vType = getTermType v
+          setVarType v $ toLongNormalForm' vType
+  let body =
+        Data.Foldable.foldl
+          (\b a -> let (Abs _ tType) = getTermType b in App b (toLongNormalForm' a) tType)
+          newVar
+          (Var <$> assumptions)
+  Data.Foldable.foldr (\a b -> Abs (getTermType a) b) body $ Var <$> assumptions
 
 isClosed :: Term -> Bool
 isClosed = isClosed' 0

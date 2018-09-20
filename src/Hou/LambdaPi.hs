@@ -71,14 +71,15 @@ typeOf' c t tType = case t of
     resultName <- gen
     let resultType = MetaVar (resultName, Abs argType starType)
     eq1 <- typeOf' c t1 (buildImplication argType resultType)
-    Debug.Trace.traceM $ "eq1: " ++ show eq1
+    -- Debug.Trace.traceM $ "eq1: " ++ show eq1
     eq2 <- typeOf' c t2 argType
-    Debug.Trace.traceM $ "eq2: " ++ show eq2
+    -- Debug.Trace.traceM $ "eq2: " ++ show eq2
     typedT2 <- attachTypes t2
     let appResult = App resultType typedT2 starType
     return $ (tType, appResult) : buildTypeEquations tType appResult ++ eq1 ++ eq2
     -- return $ (tType, appResult) : eq1 ++ eq2
 
+  -- FIXME: instead of producing new FreeVar use context for populating Vars?
   Abs _ body -> do
     mvName <- gen
     let mv = MetaVar (mvName, starType)
