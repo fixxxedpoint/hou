@@ -26,6 +26,7 @@ import           Control.Monad.Gen
 import           Data.FMList                as FML
 import           Data.List
 import           Data.Maybe
+import qualified Debug.Trace
 
 
 type VarName = Int
@@ -83,7 +84,7 @@ inferFTerm t = trace ("inferFTerm: " ++ show t) $ do
   traceM $ "inferFTerm 1: " ++ show fixedFormula
   solution <- solveNonDeterministic fixedFormula H.createListSolution
   traceM $ "inferFTerm 2: " ++ show resultType
-  -- traceM $ "inferFTerm 3: " ++ show (H.normalize $ H.apply solution resultType)
+  -- Debug.Trace.traceM $ "inferFTerm 3: " ++ show (H.normalize $ H.apply solution resultType)
   toFTermType <$> (H.normalize $ H.apply solution resultType)
   -- return $ toFTermType (H.normalize $ H.apply solution resultType)
 

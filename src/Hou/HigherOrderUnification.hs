@@ -135,7 +135,6 @@ instance Solution ListSolution where
   apply s@(LS [(mv1@(mv1Name, _), term)]) t@(MetaVar mv2@(mv2Name, tType)) | mv1Name == mv2Name = trace "5.1" term
                                                                            | otherwise = trace "5.2" t
   apply (LS (s:rest)) t = trace "6" $ apply (LS [s]) $ apply (LS rest) t
-  -- apply _ t = trace "7" t
 
 {-|
 Preunification algorithm tries to solve a given list of equations, returning a solution when all of
@@ -178,6 +177,7 @@ preunify' equations solution = L.interrupt $ callCC $ \exit -> do
   -- Debug.Trace.traceM $ "preunify' simplified: " ++ show simplified
   when (isSolved simplified) $ exit solution
   -- flexRigid <- L.anyOf . filter (\(a, b) -> isFlexible a && isRigid b) $ simplified
+  -- Debug.Trace.traceM $ show simplified
   let flexRigid = head . filter (\(a, b) -> isFlexible a && isRigid b) $ simplified
   -- Debug.Trace.traceM $ "preunify' flexRigid: " ++ show flexRigid
   (mv, term) <- generateStep flexRigid
@@ -205,7 +205,7 @@ unifyNonDeterministic :: (Solution s, L.NonDet n)
                       -> L.NonDeterministicT r n s
 unifyNonDeterministic eqs s =
   let nextEnum = toEnum . (1 +) . getMaxMetaFreeVar $ eqs in
-  trace "preunifyF..." $ runGenTFrom nextEnum $ unify eqs s
+  trace ("preunifyF..." ++ show eqs) $ runGenTFrom nextEnum $ unify eqs s
 
 unify :: (Solution s, L.NonDet n)
       => [Equation]
@@ -216,7 +216,7 @@ unify eqs s = do
   presolution <- preunify lnf s
   -- Debug.Trace.traceM $ "already preunified: " ++ show presolution
   result <- unify' ((apply presolution *** apply presolution) <$> lnf) presolution
-  Debug.Trace.traceM "finished"
+  -- Debug.Trace.traceM "finished"
   return result
 
 
@@ -278,16 +278,16 @@ simplify (t1, t2)
       return [] -- check for metavars?
   -- | not (isClosed t1 && isClosed t2) = return []
   -- TODO | try to avoid this cuz it is also changing free variables in types
-  -- | (Abs type1 a) <- t1,
-  --   (Abs type2 b) <- t2 = do
-  --   -- type1 == type2 = do
-  --     newVar <- gen
-  --     let newCons = FreeVar (newVar, type1)
-  --     let newA = substitute newCons 0 a
-  --     let newB = substitute newCons 0 b
-  --     -- Debug.Trace.traceM "I am here 2"
-  --     (:) (type1, type2) <$> simplify (newA, newB)
-  --     -- simplify (newA, newB)
+  | (Abs type1 a) <- t1,
+    (Abs type2 b) <- t2,
+    type1 == type2 = do
+      newVar <- gen
+      let newCons = FreeVar (newVar, type1)
+      let newA = substitute newCons 0 a
+      let newB = substitute newCons 0 b
+      -- Debug.Trace.traceM $ "I am here 2" ++ show type1 ++ "---" ++ show type2
+      -- (:) (type1, type2) <$> simplify (newA, newB)
+      simplify (newA, newB)
   | (c1, ctx1) <- getHead t1,
     (c2, ctx2) <- getHead t2,
     isFreeVarOrConstant c1 && isFreeVarOrConstant c2 = do
@@ -321,8 +321,8 @@ isRigid :: Term -> Bool
 isRigid = not . isFlexible
 
 isFlexible :: Term -> Bool
-isFlexible t | (MetaVar _, _) <- getHead t = trace "is flexible" True
-             | otherwise = trace "is not flexible" False
+isFlexible t | (MetaVar _, _) <- getHead t = Debug.Trace.trace "is flexible" True
+             | otherwise = trace ("is not flexible" ++ show t) False
 
 isVarType :: TermType -> Bool
 isVarType (Abs _ _) = False
@@ -421,14 +421,6 @@ getAssumptionsAndGoal t =
         newDeBruijnIndex ((ix, _):_) = ix + 1
 
 getMatchingTerms :: TermType -> [Term] -> [Term]
--- getMatchingTerms goal = filter $ (goal ==) . getGoal . getTermType
--- getMatchingTerms goal = id
--- getMatchingTerms goal = sortBy comparer
---   where comparer a b =
---           if getGoal a == goal then LT
---             else
---               if getGoal b == goal then GT
---                 else EQ
 getMatchingTerms goal terms = good ++ bad
   where (good, bad) = partition ((goal ==) . getGoal . getTermType) terms
 
