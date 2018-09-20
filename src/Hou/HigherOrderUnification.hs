@@ -438,28 +438,28 @@ isSolved equations = trace ("isSolved: " ++ show equations) $
   and $ uncurry (&&) . (isFlexible *** isFlexible) <$> equations
 
 substitute :: Term -> DeBruijnIndex -> Term -> Term
-substitute new index term = case term of
-  (Var (deBruijnIndex, varType)) -> case compare deBruijnIndex index of
-    LT -> Var (deBruijnIndex, varType)
-    EQ -> new
-    GT -> Var (deBruijnIndex-1, varType)
-  App a b termType -> App (substitute new index a) (substitute new index b) termType
-  Abs termType a -> Abs termType (substitute (raise 1 new) (index+1) a)
-  MetaVar (name, mvType) -> MetaVar (name,  mvType)
-  Constant (name, consType) -> Constant (name, consType)
-  FreeVar (name, fvType) -> FreeVar (name, fvType)
-  _ -> term
 -- substitute new index term = case term of
 --   (Var (deBruijnIndex, varType)) -> case compare deBruijnIndex index of
---     LT -> Var (deBruijnIndex, substitute new index varType)
+--     LT -> Var (deBruijnIndex, varType)
 --     EQ -> new
---     GT -> Var (deBruijnIndex-1, substitute new index varType)
---   App a b termType -> App (substitute new index a) (substitute new index b) (substitute new index termType)
---   Abs termType a -> Abs (substitute new index termType) (substitute (raise 1 new) (index+1) a)
---   MetaVar (name, mvType) -> MetaVar (name, substitute new index mvType)
---   Constant (name, consType) -> Constant (name, substitute new index consType)
---   FreeVar (name, fvType) -> FreeVar (name, substitute new index fvType)
+--     GT -> Var (deBruijnIndex-1, varType)
+--   App a b termType -> App (substitute new index a) (substitute new index b) termType
+--   Abs termType a -> Abs termType (substitute (raise 1 new) (index+1) a)
+--   MetaVar (name, mvType) -> MetaVar (name,  mvType)
+--   Constant (name, consType) -> Constant (name, consType)
+--   FreeVar (name, fvType) -> FreeVar (name, fvType)
 --   _ -> term
+substitute new index term = case term of
+  (Var (deBruijnIndex, varType)) -> case compare deBruijnIndex index of
+    LT -> Var (deBruijnIndex, substitute new index varType)
+    EQ -> new
+    GT -> Var (deBruijnIndex-1, substitute new index varType)
+  App a b termType -> App (substitute new index a) (substitute new index b) (substitute new index termType)
+  Abs termType a -> Abs (substitute new index termType) (substitute (raise 1 new) (index+1) a)
+  MetaVar (name, mvType) -> MetaVar (name, substitute new index mvType)
+  Constant (name, consType) -> Constant (name, substitute new index consType)
+  FreeVar (name, fvType) -> FreeVar (name, substitute new index fvType)
+  _ -> term
 
 substituteFV :: Term -> FreeVariable -> Term -> Term
 substituteFV new fv@(ix, fvType) term | fvType == getTermType new = case term of

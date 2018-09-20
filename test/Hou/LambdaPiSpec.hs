@@ -15,35 +15,35 @@ import           Debug.Trace
 
 
 spec = do
-  -- describe "infere type for a term of the form \\lambda x . x" $ do
-  --   it "should return some type" $ do
-  --     let term = Abs Uni (Var (0, Uni))
+  describe "infere type for a term of the form \\lambda x . x" $ do
+    it "should return some type" $ do
+      let term = Abs Uni (Var (0, Uni))
 
-  --     let result = solvePiTerm createMapContext term
-  --     traceM $ show $ head result
+      let result = solvePiTerm createMapContext term
+      traceM $ show $ head result
 
-  --     result `shouldNotBe` []
+      result `shouldNotBe` []
 
-  -- describe "infere type for a term of the form \\lambda x . Fx, where F is of type \\lambda x . Px and P is \\lambda T . *" $ do
-  --   it "should return some type" $ do
-  --     let tType = Constant ("T", starType)
-  --     let fv0 = 0
-  --     let pType = Abs tType starType
-  --     let p = Constant ("P", pType)
-  --     let term =
-  --           Abs Uni
-  --             (App (FreeVar (fv0, Uni)) (Var (0, Uni)) Uni)
-  --     let fv0Type =
-  --           buildImplication tType (Abs tType (App p (Var (0, tType)) starType))
-  --     let expected = buildImplication tType (Abs tType (App p (Var (0, tType)) starType))
-  --     let ctx = IU.add IU.createMapContext fv0 fv0Type
+  describe "infere type for a term of the form \\lambda x . Fx, where F is of type \\lambda x . Px and P is \\lambda T . *" $ do
+    it "should return some type" $ do
+      let tType = Constant ("T", starType)
+      let fv0 = 0
+      let pType = Abs tType starType
+      let p = Constant ("P", pType)
+      let term =
+            Abs Uni
+              (App (FreeVar (fv0, Uni)) (Var (0, Uni)) Uni)
+      let fv0Type =
+            buildImplication tType (Abs tType (App p (Var (0, tType)) starType))
+      let expected = buildImplication tType (Abs tType (App p (Var (0, tType)) starType))
+      let ctx = IU.add IU.createMapContext fv0 fv0Type
 
-  --     -- TODO: randomizowany algorytm dla quorow
-  --     let result = solvePiTerm ctx term
+      -- TODO: randomizowany algorytm dla quorow
+      let result = solvePiTerm ctx term
 
-  --     traceM $ (show $ head result)
+      traceM $ (show $ head result)
 
-  --     result `shouldNotBe` []
+      result `shouldNotBe` []
 
   describe "force a subterm to have a dependent type" $ do
     it "should return a proper type" $ do
