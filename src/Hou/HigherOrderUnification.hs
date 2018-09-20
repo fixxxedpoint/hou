@@ -183,7 +183,7 @@ preunify' equations solution = L.interrupt $ callCC $ \exit -> do
   (mv, term) <- generateStep flexRigid
   let (newSolution, newEquations) = update mv term solution simplified
   -- Debug.Trace.traceM $ "preunify' newEquations: " ++ show newEquations
-  guard (newEquations /= equations)
+  -- guard (newEquations /= equations)
   preunify' newEquations newSolution
 
 {-|
@@ -234,7 +234,7 @@ unify' equations solution = L.interrupt $ callCC $ \exit -> do
   -- (mv, term) <- generateStep $ head simplified
   -- Debug.Trace.traceM $ "unify' generateStep: " ++ show (mv, term)
   let (newSolution, newEquations) = update mv term solution simplified
-  guard (newEquations /= equations)
+  -- guard (newEquations /= equations)
   unify' newEquations newSolution
 
 update :: (Solution s) => MetaVariable -> Term -> s -> [Equation] -> (s, [Equation])
@@ -271,7 +271,7 @@ sameName (FreeVar (name1, _)) (FreeVar (name2, _)) | name1 == name2 = True
 sameName (Constant (name1, _)) (Constant (name2, _)) | name1 == name2 = True
 sameName _ _ = False
 
-simplify :: (MonadPlus m, MonadGen MetaVariableName m) => Equation -> m [Equation]
+simplify :: (L.NonDet m, MonadPlus m, MonadGen MetaVariableName m) => Equation -> m [Equation]
 simplify (t1, t2)
   | t1 == t2 = do
       -- Debug.Trace.traceM "I am here 0"
@@ -301,11 +301,11 @@ simplify (t1, t2)
   | isRigid t1 && isFlexible t2 = trace "rigid-flex" $ return [(t2, t1)]
   | isFlexible t1 && isRigid t2 = trace ("flex-rigid: " ++ show t1 ++ " --- " ++ show t2) $ return [(t1, t2)]
   | isFlexible t1 && isFlexible t2 = trace "flex-flex" $ return [(t1, t2)]
-  -- | otherwise = Debug.Trace.trace ("otherwise: " ++ show t1 ++ "---" ++ show t2) mzero
-  | otherwise = trace ("otherwise: " ++ show t1 ++ "---" ++ show t2) $ return [(t1, t2)]
+  | otherwise = Debug.Trace.trace ("otherwise: " ++ show t1 ++ "---" ++ show t2) L.failure
+  -- | otherwise = trace ("otherwise: " ++ show t1 ++ "---" ++ show t2) $ return [(t1, t2)]
   -- | otherwise = fail "otherwise"
 
-fixPointOfSimplify :: (MonadPlus m, MonadGen MetaVariableName m) => [Equation] -> m [Equation]
+fixPointOfSimplify :: (L.NonDet m, MonadPlus m, MonadGen MetaVariableName m) => [Equation] -> m [Equation]
 fixPointOfSimplify cs = do
   traceM $ "fixPointOfSimplify: " ++ show cs
   cs' <- fold <$> mapM simplify cs

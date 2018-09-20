@@ -26,7 +26,6 @@ import           Control.Monad.Gen
 import           Data.FMList                as FML
 import           Data.List
 import           Data.Maybe
-import qualified Debug.Trace
 
 
 type VarName = Int
