@@ -1,3 +1,6 @@
+-- TODO: Consider some approach simillar to pfenning and add a new constant PI : (M -> *) -> * (M is
+-- a metavariable) and use it for example when you encounter an abstraction.
+
 {-# LANGUAGE FlexibleContexts      #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 
@@ -94,7 +97,7 @@ typeOf' c t tType = case t of
     -- let argValue = MetaVar (argName, mv)
     -- eqs <- typeOf' c (substitute fv 0 body) (App returnType argValue starType)
     eqs <- typeOf' (IU.add c freeVarName mv) (substitute fv 0 body) (App returnType fv starType)
-    let absResult = buildImplication mv returnType
+    let absResult = buildImplication mv (Abs mv (App returnType (Var (0, mv)) starType))
     return $ (tType, absResult) : eqs
   _ -> fail "invalid term"
 
