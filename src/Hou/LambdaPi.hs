@@ -1,4 +1,5 @@
-{-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE FlexibleContexts      #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
 
 -- TODO: unify terms and types by introducing (Pi x:type term) [use deBruijn notation] construction.
 
@@ -12,17 +13,16 @@ License     : MIT, see the file LICENSE
 module Hou.LambdaPi where
 
 import           Hou.HigherOrderUnification as H
-import           Hou.Levels
 import           Hou.InferenceUtils         as IU
+import           Hou.Levels
 import           Hou.MixedPrefix
 import           Hou.Trace
 
-import           Control.Monad
 import           Control.Applicative
+import           Control.Monad
 import           Control.Monad.Gen
 import           Data.FMList                as FML
 import           Data.Maybe
-import qualified Debug.Trace
 
 
 type PiTerm = Term
@@ -37,12 +37,18 @@ buildImplication t1 t2 | getTermType t1 == starType && getTermType t2 == Abs t1 
   in trace ("build imlication: " ++ show result) result
 buildImplication t1 t2 = traceStack "buildImplication" $ error $ "term: " ++ show t1 ++ "---" ++ show t2
 
--- TODO: General idea of the algorithm (the one presented below is rather not correct):
--- Is it true that a term if a term can be typed using dependent types then there exists an environment for simply typed lambda calculus in which this term has a type in it? If so, then before infering an application, first try to typecheck both terms in some contexts. This also assures that every term is strongly normalizable. Only then both are typable, try to infere a dependent type.
+-- TODO: General idea of the algorithm (the one presented below is rather not correct): Is it true
+-- that if a term can be typed using dependent types then there exists an environment for simply
+-- typed lambda calculus in which this term is also typable? If so, then before infering an
+-- application, first try to typecheck both terms in some contexts. This also assures that every
+-- term is strongly normalizable. Only then both are typable, try to infere a dependent type.
 -- 1) infer all subterms using simply type lambda calculus
 -- 2) if some subterm is not typable, then return an error
--- 3) otherwise, typcheck all types in the context, that is check if all types are correct and all applications are correct.
---    After this, substitute all dependent types of kind T -> * to kind TermType -> *. WARNING: you shouldn't forget their types this way. It makes it impossible to guess some application of terms, or rather can make non-normalizable.
+-- 3) otherwise, typcheck all types in the context, that is check if all types are correct and all
+-- applications are correct. After this, substitute all dependent types of kind T -> * to kind
+-- TermType -> *.
+-- WARNING: you shouldn't forget their types this way. It makes it impossible to guess some
+-- application of terms, or rather can make it non-normalizable.
 typeOf :: (Context c FreeVarName PiTermType)
        => c
        -> PiTerm
@@ -61,9 +67,7 @@ typeOf' :: (Context c FreeVarName PiTermType, MonadGen MetaVariableName m, Monad
        -> PiTermType
        -> m [Equation]
 typeOf' c t tType = case t of
-  FreeVar (varName, _) -> maybe mzero (\x -> return $ (tType, x) : buildTypeEquations tType x) $ IU.lookup c varName
-  -- FreeVar (varName, _) -> maybe mzero (\x -> return $ [(tType, x)]) $ IU.lookup c varName
-  -- MetaVar (mvName, mvType) -> return [(tType, mvType)]
+  FreeVar (varName, _) -> maybe mzero (\x -> return [(tType, x)]) $ IU.lookup c varName
 
   App t1 t2 _ -> do
     argName <- gen
@@ -71,15 +75,14 @@ typeOf' c t tType = case t of
     resultName <- gen
     let resultType = MetaVar (resultName, Abs argType starType)
     eq1 <- typeOf' c t1 (buildImplication argType resultType)
-    -- Debug.Trace.traceM $ "eq1: " ++ show eq1
+    traceM $ "eq1: " ++ show eq1
     eq2 <- typeOf' c t2 argType
-    -- Debug.Trace.traceM $ "eq2: " ++ show eq2
-    typedT2 <- attachTypes t2
-    let appResult = App resultType typedT2 starType
-    return $ (tType, appResult) : buildTypeEquations tType appResult ++ eq1 ++ eq2
-    -- return $ (tType, appResult) : eq1 ++ eq2
+    traceM $ "eq2: " ++ show eq2
+    -- typedT2 <- attachTypes t2
+    -- let appResult = App resultType typedT2 starType
+    let appResult = App resultType t2 starType
+    return $ (tType, appResult) : eq1 ++ eq2
 
-  -- FIXME: instead of producing new FreeVar use context for populating Vars?
   Abs _ body -> do
     mvName <- gen
     let mv = MetaVar (mvName, starType)
@@ -89,11 +92,10 @@ typeOf' c t tType = case t of
     let returnType = MetaVar (returnName, Abs mv starType)
     -- argName <- gen
     -- let argValue = MetaVar (argName, mv)
-    eqs <- typeOf' (IU.add c freeVarName mv) (substitute fv 0 body) (App returnType fv starType)
     -- eqs <- typeOf' c (substitute fv 0 body) (App returnType argValue starType)
+    eqs <- typeOf' (IU.add c freeVarName mv) (substitute fv 0 body) (App returnType fv starType)
     let absResult = buildImplication mv returnType
-    return $ (tType, absResult) : buildTypeEquations tType absResult ++ eqs
-    -- return $ (tType, absResult) : eqs
+    return $ (tType, absResult) : eqs
   _ -> fail "invalid term"
 
 attachTypes :: (MonadGen MetaVariableName m) => PiTerm -> m PiTerm
@@ -110,12 +112,6 @@ attachTypes t = do
       return $ App t1' t2' newType
     Abs _ body -> Abs newType <$> attachTypes body
     _ -> return t
-
-buildTypeEquations :: PiTermType -> PiTermType -> [Equation]
-buildTypeEquations _ _ = []
-buildTypeEquations (App a1 b1 t1) (App a2 b2 t2) = (getTermType t1, getTermType t2) : (t1, t2) : buildTypeEquations a1 a2 ++ buildTypeEquations b1 b2
-buildTypeEquations (Abs t1 b1) (Abs t2 b2) = (getTermType t1, getTermType t2) : (t1, t2) : buildTypeEquations b1 b2
-buildTypeEquations m1 m2 = [(getTermType m1, getTermType m2)]
 
 solvePiTerm :: (Context c FreeVarName PiTermType) => c -> PiTerm -> [PiTermType]
 solvePiTerm c = FML.toList . solve' c

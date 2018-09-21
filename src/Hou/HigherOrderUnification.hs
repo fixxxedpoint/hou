@@ -1,4 +1,5 @@
-{-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE FlexibleContexts      #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
 
 -- TODO: implement Zaionc's remark regarding regular unification trees, e.g. fail if given a term of
 -- the form ( X a ) = ( f ( X a )) we generate a term of the form ( H a ) = ( f ( H a )) (it
@@ -43,9 +44,8 @@ module Hou.HigherOrderUnification(
   )
   where
 
-import qualified Hou.Levels as L
+import qualified Hou.Levels          as L
 import           Hou.Trace
-import qualified Debug.Trace
 
 import qualified Control.Applicative as Appl
 import           Control.Arrow
@@ -267,17 +267,14 @@ getMetaFreeVars' t r = case t of
   _                           -> r
 
 sameName :: Term -> Term -> Bool
-sameName (FreeVar (name1, _)) (FreeVar (name2, _)) | name1 == name2 = True
+sameName (FreeVar (name1, _)) (FreeVar (name2, _))   | name1 == name2 = True
 sameName (Constant (name1, _)) (Constant (name2, _)) | name1 == name2 = True
-sameName _ _ = False
+sameName _ _                                         = False
 
 simplify :: (L.NonDet m, MonadPlus m, MonadGen MetaVariableName m) => Equation -> m [Equation]
 simplify (t1, t2)
   | t1 == t2 = do
-      -- Debug.Trace.traceM "I am here 0"
       return [] -- check for metavars?
-  -- | not (isClosed t1 && isClosed t2) = return []
-  -- TODO | try to avoid this cuz it is also changing free variables in types
   | (Abs type1 a) <- t1,
     (Abs type2 b) <- t2,
     type1 == type2 = do
@@ -288,20 +285,19 @@ simplify (t1, t2)
       -- Debug.Trace.traceM $ "I am here 2" ++ show type1 ++ "---" ++ show type2
       -- (:) (type1, type2) <$> simplify (newA, newB)
       simplify (newA, newB)
+  -- | (Abs type1 _) <- t1,
+  --   (Abs type2 _) <- t2 = do
+  --     Debug.Trace.traceM $ "abs: " ++ show type1 ++ "---" ++ show type2
+  --     return [(type1, type2)]
   | (c1, ctx1) <- getHead t1,
     (c2, ctx2) <- getHead t2,
     isFreeVarOrConstant c1 && isFreeVarOrConstant c2 = do
-    -- c1 == c2 = do
-    -- c1 == c2 = do
-      -- Debug.Trace.traceM $ "I am here 4" ++ show c1 ++ "---" ++ show c2
-      -- guard (c1 == c2) -- this can fail the whole process
       guard (sameName c1 c2) -- this can fail the whole process
-      -- Debug.Trace.traceM "I am here 5"
       (:) (getTermType c1, getTermType c2) <$> fold <$> mapM simplify (zip ctx1 ctx2) -- faster than using fixPointOfSimplify
   | isRigid t1 && isFlexible t2 = trace "rigid-flex" $ return [(t2, t1)]
   | isFlexible t1 && isRigid t2 = trace ("flex-rigid: " ++ show t1 ++ " --- " ++ show t2) $ return [(t1, t2)]
   | isFlexible t1 && isFlexible t2 = trace "flex-flex" $ return [(t1, t2)]
-  | otherwise = Debug.Trace.trace ("otherwise: " ++ show t1 ++ "---" ++ show t2) L.failure
+  | otherwise = trace ("otherwise: " ++ show t1 ++ "---" ++ show t2) L.failure
   -- | otherwise = trace ("otherwise: " ++ show t1 ++ "---" ++ show t2) $ return [(t1, t2)]
   -- | otherwise = fail "otherwise"
 
@@ -321,7 +317,7 @@ isRigid :: Term -> Bool
 isRigid = not . isFlexible
 
 isFlexible :: Term -> Bool
-isFlexible t | (MetaVar _, _) <- getHead t = Debug.Trace.trace "is flexible" True
+isFlexible t | (MetaVar _, _) <- getHead t = trace "is flexible" True
              | otherwise = trace ("is not flexible" ++ show t) False
 
 isVarType :: TermType -> Bool
@@ -356,7 +352,7 @@ generateStep (flex, rigid) | isFlexible flex = do
 generateStep (t1, t2) = fail $ "first term of the equation is not flexible: " ++ show t1 ++ "---" ++ show t2
 
 changeGoal (Abs a b) goal = Abs a (changeGoal b goal)
-changeGoal _ goal = goal
+changeGoal _ goal         = goal
 
 generate :: (MonadPlus m, MonadGen MetaVariableName m, L.NonDet m)
          => TermType
@@ -426,7 +422,7 @@ getMatchingTerms goal terms = good ++ bad
 
 getGoal :: TermType -> TermType
 getGoal (Abs _ b) = getGoal b
-getGoal g                 = g
+getGoal g         = g
 
 foldr :: (TermType -> b -> b) -> b -> TermType -> b
 foldr fun initValue (Abs a b) = fun a $ Hou.HigherOrderUnification.foldr fun initValue b
@@ -450,7 +446,7 @@ substitute :: Term -> DeBruijnIndex -> Term -> Term
 --   FreeVar (name, fvType) -> FreeVar (name, fvType)
 --   _ -> term
 substitute new index term = case term of
-  (Var (deBruijnIndex, varType)) -> case compare deBruijnIndex index of
+  Var (deBruijnIndex, varType) -> case compare deBruijnIndex index of
     LT -> Var (deBruijnIndex, substitute new index varType)
     EQ -> new
     GT -> Var (deBruijnIndex-1, substitute new index varType)
@@ -489,31 +485,30 @@ normalize t = case t of
       l'         -> App l' <$> normalize r <*> normalize tType
   Abs varType body -> Abs <$> normalize varType <*> normalize body
   Uni -> return Uni
-  -- _ -> return t
   _ -> do
     let vType = getTermType t
     setVarType t <$> (normalize vType)
 
 getHead :: Term -> (Term, [Term])
 getHead t = get t []
-  where get (App a b _) ctx = get a (b : ctx)
+  where get (App a b _) ctx  = get a (b : ctx)
         get (Abs _ body) ctx = get body ctx
-        get tt          ctx = (tt, ctx)
+        get tt          ctx  = (tt, ctx)
 
 getHeadConstant :: Term -> Maybe Constant
 getHeadConstant t = case (fst . getHead $ t) of
   Constant constant -> Just constant
-  _                   -> Nothing
+  _                 -> Nothing
 
 getHeadFreeVar :: Term -> Maybe Variable
 getHeadFreeVar t = case (fst . getHead $ t) of
   FreeVar var -> Just var
-  _             -> Nothing
+  _           -> Nothing
 
 getHeadMetaVar :: Term -> Maybe MetaVariable
 getHeadMetaVar t = case (fst . getHead $ t) of
   MetaVar var -> Just var
-  _             -> Nothing
+  _           -> Nothing
 
 getTermType :: Term -> TermType
 getTermType (MetaVar (_, t))  = t
@@ -526,11 +521,11 @@ getTermType Uni               = Uni
 
 setVarType :: Term -> TermType -> Term
 setVarType t newType = case t of
-  MetaVar (name, _) -> MetaVar (name, newType)
+  MetaVar (name, _)  -> MetaVar (name, newType)
   Constant (name, _) -> Constant (name, newType)
-  Var (name, _) -> Var (name, newType)
-  FreeVar (name, _) -> FreeVar (name, newType)
-  _ -> t
+  Var (name, _)      -> Var (name, newType)
+  FreeVar (name, _)  -> FreeVar (name, newType)
+  _                  -> t
 
 isLongNormalForm :: Term -> Bool
 isLongNormalForm t = case getTermType t of
