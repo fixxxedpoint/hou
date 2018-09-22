@@ -25,6 +25,7 @@ module Hou.HigherOrderUnification(
   Solution(..),
   getTermType,
   someType,
+  properTypeConstructor,
   starType,
   termType,
   varType,
@@ -75,6 +76,9 @@ type Constant = (ConstantName, TermType)
 type Variable = (DeBruijnIndex, TermType)
 
 type FreeVariable = (FreeVarName, TermType)
+
+properTypeConstructor :: TermType
+properTypeConstructor = Constant ("[]", Uni)
 
 starType :: TermType
 starType = Constant ("*", Constant ("[]", Uni))

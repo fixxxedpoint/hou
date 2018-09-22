@@ -32,6 +32,64 @@ type PiTerm = Term
 
 type PiTermType = TermType
 
+newMetaVariable :: (MonadGen H.MetaVariableName m) => m H.MetaVariable
+newMetaVariable = do
+  newVar <- gen
+  return (newVar, H.starType)
+
+implication :: PiTerm -> PiTerm -> PiTerm
+implication t1 t2 | getTermType t1 == starType, getTermType t2 == Abs t1 starType =
+  App
+    (App
+      (Constant ("Π", Abs starType (Abs (Abs t1 starType) starType)))
+      t1
+      (Abs (Abs t1 starType) starType)
+    )
+    t2
+    starType
+
+translate :: (MonadGen MetaVariableName m, Context c FreeVarName PiTermType) => c -> PiTerm -> H.Term -> m HouFormula
+translate ctx t tType = case t of
+  (FreeVar (name, _)) ->
+    case IU.lookup ctx name of
+      Nothing -> fail "definition of a variable was not found in the context"
+      (Just ctxType) -> return $ Equation tType ctxType
+
+  -- Metavar of some metavar type of [] type (proper type constructor)
+  (App t1 t2 _) -> do
+    betaName <- gen
+    betaTypesName <- gen
+    let betaType = (betaTypesName, properTypeConstructor)
+    let beta = (betaName, MetaVar betaType)
+    let betaTerm = MetaVar beta
+    vName <- gen
+    let v = (vName, Abs betaTerm starType)
+    let vMetaVar = MetaVar v
+    t1Formula <- translate ctx t1 vMetaVar
+    t2Formula <- translate ctx t2 betaTerm
+    t2WithTypes <- attachTypes t2
+    return $
+      Exists betaType . Exists beta . Exists v $
+        And
+          (Equation tType (App vMetaVar t2WithTypes starType))
+          (And t1Formula t2Formula)
+
+  (Abs _ body) -> do
+    betaName <- gen
+    betaTypesName <- gen
+    let betaType = (betaTypesName, properTypeConstructor)
+    let beta = (betaName, MetaVar betaType)
+    let betaTerm = MetaVar beta
+    vName  <- gen
+    let v = (vName, Abs betaTerm starType)
+    let vMetaVar = MetaVar v
+    fvName <- gen
+    let fv = FreeVar (fvName, betaTerm)
+    Exists betaType . Exists beta . Exists v .
+      And
+        (Equation tType (Abs betaTerm (App vMetaVar betaTerm starType))) <$>
+          translate (IU.add ctx fvName betaTerm) (substitute fv 0 body) (App vMetaVar betaTerm starType)
+
 buildImplication :: Term -> Term -> Term
 buildImplication t1 t2 | getTermType t1 == starType && getTermType t2 == Abs t1 starType =
   let result = App
