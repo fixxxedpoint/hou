@@ -39,7 +39,6 @@ module Hou.HigherOrderUnification(
   getMetavarId,
   getHead,
   substitute,
-  substituteFV,
   raise,
   isClosed
   )
@@ -47,6 +46,7 @@ module Hou.HigherOrderUnification(
 
 import qualified Hou.Levels          as L
 import           Hou.Trace
+import qualified Debug.Trace
 
 import qualified Control.Applicative as Appl
 import           Control.Arrow
@@ -78,7 +78,7 @@ type Variable = (DeBruijnIndex, TermType)
 type FreeVariable = (FreeVarName, TermType)
 
 properTypeConstructor :: TermType
-properTypeConstructor = Constant ("[]", Uni)
+properTypeConstructor = Uni -- Constant ("[]", Uni)
 
 starType :: TermType
 starType = Constant ("*", Constant ("[]", Uni))
@@ -220,7 +220,7 @@ unify eqs s = do
   presolution <- preunify lnf s
   -- Debug.Trace.traceM $ "already preunified: " ++ show presolution
   result <- unify' ((apply presolution *** apply presolution) <$> lnf) presolution
-  -- Debug.Trace.traceM "finished"
+  Debug.Trace.traceM "finished"
   return result
 
 
@@ -279,6 +279,8 @@ simplify :: (L.NonDet m, MonadPlus m, MonadGen MetaVariableName m) => Equation -
 simplify (t1, t2)
   | t1 == t2 = do
       return [] -- check for metavars?
+  | Uni <- t1 = return []
+  | Uni <- t2 = return []
   | (Abs type1 a) <- t1,
     (Abs type2 b) <- t2,
     type1 == type2 = do
@@ -334,6 +336,7 @@ Tries to non-deterministically solve an equation using projection or imitation.
 generateStep :: (MonadPlus m, MonadGen MetaVariableName m, L.NonDet m)
              => Equation
              -> m (MetaVariable, Term)
+generateStep (flex, rigid) | flex == rigid = fail "wtf?"
 generateStep (flex, rigid) | isFlexible flex = do
   let (flexTerm, _) = getHead flex
   flexVariable <- case flexTerm of
@@ -342,9 +345,10 @@ generateStep (flex, rigid) | isFlexible flex = do
   let headConstant = getHeadConstant rigid
   let headFreeVar  = getHeadFreeVar rigid
   let headMetaVar  = getHeadMetaVar rigid
-  let availableTerms = (Constant <$> maybeToList headConstant) ++
-                       (filter (/= flexTerm) $ MetaVar <$> maybeToList headMetaVar) ++
-                       (FreeVar <$> maybeToList headFreeVar)
+  let availableTerms = rigid :
+                       (Constant <$> maybeToList headConstant) ++
+                       (FreeVar <$> maybeToList headFreeVar) ++
+                       (filter (/= flexTerm) $ MetaVar <$> maybeToList headMetaVar)
   traceM $ "before generate: " ++ show headConstant
   traceM $ "before generate head FreeVar: " ++ show headFreeVar
   traceM $ "before generate available terms: " ++ show availableTerms
@@ -373,8 +377,8 @@ generate varType availableTerms = do
   traceM $ "Matching terms: " ++ show matchingTerms
   traceM ("generate: " ++ show matchingAssumptions)
   traceM $ "is empty :" ++ show (null (matchingTerms ++ matchingAssumptions))
-  head <- L.anyOf $ matchingAssumptions ++ matchingTerms
-  -- head <- L.anyOf $ matchingTerms ++ matchingAssumptions
+  -- head <- L.anyOf $ matchingAssumptions ++ matchingTerms
+  head <- L.anyOf $ matchingTerms ++ matchingAssumptions
   traceM $ "generate head: " ++ show head ++ " --- " ++ show matchingAssumptions ++ " --- " ++ show matchingTerms
   result <- generateLongTerm assumptions head
   traceM ("generate result: " ++ show result)
@@ -388,7 +392,9 @@ generateLongTerm lambdas head = do
   return $ Data.Foldable.foldr (Abs . getTermType . Var) body lambdas
 
 generateLongBody :: (MonadGen MetaVariableName m) => [Variable] -> Term -> m Term
-generateLongBody variables head = foldM newArgVar head $ getTermType . Var <$> trace ("assumptions: " ++ show assumptions) assumptions
+generateLongBody variables head =
+  if null variables then return head
+  else foldM newArgVar head $ getTermType . Var <$> trace ("assumptions: " ++ show assumptions) assumptions
   where
     (assumptions, _) = getAssumptionsAndGoal . getTermType $ head
 
@@ -421,6 +427,7 @@ getAssumptionsAndGoal t =
         newDeBruijnIndex ((ix, _):_) = ix + 1
 
 getMatchingTerms :: TermType -> [Term] -> [Term]
+-- getMatchingTerms goal terms = terms
 getMatchingTerms goal terms = good ++ bad
   where (good, bad) = partition ((goal ==) . getGoal . getTermType) terms
 
@@ -438,17 +445,6 @@ isSolved equations = trace ("isSolved: " ++ show equations) $
   and $ uncurry (&&) . (isFlexible *** isFlexible) <$> equations
 
 substitute :: Term -> DeBruijnIndex -> Term -> Term
--- substitute new index term = case term of
---   (Var (deBruijnIndex, varType)) -> case compare deBruijnIndex index of
---     LT -> Var (deBruijnIndex, varType)
---     EQ -> new
---     GT -> Var (deBruijnIndex-1, varType)
---   App a b termType -> App (substitute new index a) (substitute new index b) termType
---   Abs termType a -> Abs termType (substitute (raise 1 new) (index+1) a)
---   MetaVar (name, mvType) -> MetaVar (name,  mvType)
---   Constant (name, consType) -> Constant (name, consType)
---   FreeVar (name, fvType) -> FreeVar (name, fvType)
---   _ -> term
 substitute new index term = case term of
   Var (deBruijnIndex, varType) -> case compare deBruijnIndex index of
     LT -> Var (deBruijnIndex, substitute new index varType)
@@ -459,13 +455,6 @@ substitute new index term = case term of
   MetaVar (name, mvType) -> MetaVar (name, substitute new index mvType)
   Constant (name, consType) -> Constant (name, substitute new index consType)
   FreeVar (name, fvType) -> FreeVar (name, substitute new index fvType)
-  _ -> term
-
-substituteFV :: Term -> FreeVariable -> Term -> Term
-substituteFV new fv@(ix, fvType) term | fvType == getTermType new = case term of
-  FreeVar (ix2, fvType2) | fvType2 == fvType, ix == ix2 -> new
-  App a b termType -> App (substituteFV new fv a) (substituteFV new fv b) (substituteFV new fv termType)
-  Abs termType a -> Abs termType (substituteFV (raise 1 new) fv a)
   _ -> term
 
 raise :: Int -> Term -> Term
@@ -496,7 +485,7 @@ normalize t = case t of
 getHead :: Term -> (Term, [Term])
 getHead t = get t []
   where get (App a b _) ctx  = get a (b : ctx)
-        get (Abs _ body) ctx = get body ctx
+        -- get (Abs _ body) ctx = get body ctx
         get tt          ctx  = (tt, ctx)
 
 getHeadConstant :: Term -> Maybe Constant
@@ -514,13 +503,19 @@ getHeadMetaVar t = case (fst . getHead $ t) of
   MetaVar var -> Just var
   _           -> Nothing
 
+-- TODO: implement rules like * and * is *, * and [] is []
 getTermType :: Term -> TermType
 getTermType (MetaVar (_, t))  = t
 getTermType (Constant (_, t)) = t
 getTermType (Var (_, t))      = t
 getTermType (FreeVar (_, t))  = t
 getTermType (App _ _ t)       = t
-getTermType (Abs t body)      = Abs t $ getTermType body -- Pi t $ getTermType body
+getTermType (Abs t body)      = do
+  let tType = getTermType t
+  let bodyType = getTermType body
+  if tType == starType && bodyType == starType then starType
+    else if tType == starType && bodyType == properTypeConstructor then properTypeConstructor
+           else Abs t bodyType
 getTermType Uni               = Uni
 
 setVarType :: Term -> TermType -> Term

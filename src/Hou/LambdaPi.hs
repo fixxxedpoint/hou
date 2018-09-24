@@ -20,6 +20,7 @@ import           Hou.InferenceUtils         as IU
 import           Hou.Levels
 import           Hou.MixedPrefix
 import           Hou.Trace
+import qualified Debug.Trace
 
 import           Control.Applicative
 import           Control.Monad
@@ -48,55 +49,77 @@ implication t1 t2 | getTermType t1 == starType, getTermType t2 == Abs t1 starTyp
     t2
     starType
 
-translate :: (MonadGen MetaVariableName m, Context c FreeVarName PiTermType) => c -> PiTerm -> H.Term -> m HouFormula
+runTranslate :: (Context c FreeVarName PiTermType) => c -> PiTerm -> ([Equation], PiTermType) -- (HouFormula, PiTermType)
+runTranslate c t =
+  let genEnum = toEnum . (1 +) . maximum . (:) 0 . getMetaFreeVars $ t in
+  runGenFrom genEnum $ do
+    resultName <- gen
+    resultTypeName <- gen
+    let resultType = MetaVar (resultName, MetaVar (resultTypeName, properTypeConstructor))
+    formula <- translate c t resultType
+    return (formula, resultType)
+
+translate :: (MonadGen MetaVariableName m, Context c FreeVarName PiTermType) => c -> PiTerm -> H.Term -> m [Equation] -- m HouFormula
 translate ctx t tType = case t of
-  (FreeVar (name, _)) ->
+  FreeVar (name, _) ->
     case IU.lookup ctx name of
       Nothing -> fail "definition of a variable was not found in the context"
-      (Just ctxType) -> return $ Equation tType ctxType
+      (Just ctxType) -> return [(tType, ctxType)] -- return $ Equation tType ctxType
 
   -- Metavar of some metavar type of [] type (proper type constructor)
-  (App t1 t2 _) -> do
+  App t1 t2 _ -> do
+    Debug.Trace.traceM "App"
     betaName <- gen
     betaTypesName <- gen
     let betaType = (betaTypesName, properTypeConstructor)
     let beta = (betaName, MetaVar betaType)
     let betaTerm = MetaVar beta
     vName <- gen
-    let v = (vName, Abs betaTerm starType)
+    vReturnTypeName <- gen
+    let vReturnType = MetaVar (vReturnTypeName, properTypeConstructor)
+    let v = (vName, Abs betaTerm vReturnType)
     let vMetaVar = MetaVar v
     t1Formula <- translate ctx t1 vMetaVar
     t2Formula <- translate ctx t2 betaTerm
     t2WithTypes <- attachTypes t2
-    return $
-      Exists betaType . Exists beta . Exists v $
-        And
-          (Equation tType (App vMetaVar t2WithTypes starType))
-          (And t1Formula t2Formula)
+    return $ (tType, (App vMetaVar t2WithTypes vReturnType)) : t1Formula ++ t2Formula
+      -- Exists betaType . Exists beta . Exists v $
+      -- -- Exists beta . Exists v $
+      --   And
+      --     (Equation tType (App vMetaVar t2WithTypes starType))
+      --     (And t1Formula t2Formula)
 
-  (Abs _ body) -> do
+  Abs _ body -> do
+    Debug.Trace.traceM "Abs"
     betaName <- gen
     betaTypesName <- gen
     let betaType = (betaTypesName, properTypeConstructor)
     let beta = (betaName, MetaVar betaType)
     let betaTerm = MetaVar beta
-    vName  <- gen
-    let v = (vName, Abs betaTerm starType)
+    vName <- gen
+    vReturnTypeName <- gen
+    vReturnTypeTypeName <- gen
+    let vReturnType = MetaVar (vReturnTypeName, MetaVar (vReturnTypeTypeName, properTypeConstructor))
+    let v = (vName, Abs betaTerm vReturnType)
     let vMetaVar = MetaVar v
     fvName <- gen
     let fv = FreeVar (fvName, betaTerm)
-    Exists betaType . Exists beta . Exists v .
-      And
-        (Equation tType (Abs betaTerm (App vMetaVar betaTerm starType))) <$>
-          translate (IU.add ctx fvName betaTerm) (substitute fv 0 body) (App vMetaVar betaTerm starType)
+    (:) (tType, (Abs betaTerm (App vMetaVar (Var (0, betaTerm)) vReturnType))) <$>
+      translate (IU.add ctx fvName betaTerm) (substitute fv 0 body) (App vMetaVar fv vReturnType)
+    -- Exists betaType . Exists beta . Exists v .
+    -- -- Exists beta . Exists v .
+    --   And
+    --     (Equation tType (Abs betaTerm (App vMetaVar (Var (0, betaTerm)) starType))) <$>
+    --       translate (IU.add ctx fvName betaTerm) (substitute fv 0 body) (App vMetaVar betaTerm starType)
 
 buildImplication :: Term -> Term -> Term
-buildImplication t1 t2 | getTermType t1 == starType && getTermType t2 == Abs t1 starType =
-  let result = App
-        (App (Constant ("->", Abs starType (Abs (Abs (H.raise 1 t1) starType) starType))) t1 (Abs (Abs t1 starType) starType))
-        t2 starType
-  in trace ("build imlication: " ++ show result) result
-buildImplication t1 t2 = traceStack "buildImplication" $ error $ "term: " ++ show t1 ++ "---" ++ show t2
+buildImplication t1 t2 | getTermType t2 == Abs t1 starType = Abs t1 (App t2 (Var (0, t1)) starType)
+-- buildImplication t1 t2 | getTermType t1 == starType && getTermType t2 == Abs t1 starType =
+--   let result = App
+--         (App (Constant ("->", Abs starType (Abs (Abs (H.raise 1 t1) starType) starType))) t1 (Abs (Abs t1 starType) starType))
+--         t2 starType
+--   in trace ("build imlication: " ++ show result) result
+-- buildImplication t1 t2 = traceStack "buildImplication" $ error $ "term: " ++ show t1 ++ "---" ++ show t2
 
 -- TODO: General idea of the algorithm (the one presented below is rather not correct): Is it true
 -- that if a term can be typed using dependent types then there exists an environment for simply
@@ -178,8 +201,12 @@ solvePiTerm :: (Context c FreeVarName PiTermType) => c -> PiTerm -> [PiTermType]
 solvePiTerm c = FML.toList . solve' c
 
 solve' :: (Context c FreeVarName PiTermType) => c -> PiTerm -> FML.FMList PiTermType
+-- solve' c t = iterDepthDefault $ do
+--   (termType, equations) <- maybe failure return $ typeOf c t
+--   solution <- unifyNonDeterministic equations createListSolution
+--   result <- normalize $ apply solution termType
+--   return result
 solve' c t = iterDepthDefault $ do
-  (termType, equations) <- maybe failure return $ typeOf c t
-  solution <- unifyNonDeterministic equations createListSolution
-  result <- normalize $ apply solution termType
-  return result
+  let (formula, resultType) = runTranslate c t
+  solution <- unifyNonDeterministic formula createListSolution
+  normalize $ apply solution resultType
