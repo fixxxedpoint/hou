@@ -290,16 +290,16 @@ simplify (t1, t2)
       return [] -- check for metavars?
   -- | Uni <- t1 = return []
   -- | Uni <- t2 = return []
-  | (Abs type1 a) <- t1,
-    (Abs type2 b) <- t2,
-    type1 == type2 = do
-      newVar <- gen
-      let newCons = FreeVar (newVar, type1)
-      let newA = substitute newCons 0 a
-      let newB = substitute newCons 0 b
-      -- Debug.Trace.traceM $ "I am here 2" ++ show type1 ++ "---" ++ show type2
-      -- (:) (type1, type2) <$> simplify (newA, newB)
-      simplify (newA, newB)
+  -- | (Abs type1 a) <- t1,
+  --   (Abs type2 b) <- t2 = do
+  --   -- type1 == type2 = do
+  --     newVar <- gen
+  --     let newCons = FreeVar (newVar, type1)
+  --     let newA = substitute newCons 0 a
+  --     let newB = substitute newCons 0 b
+  --     -- Debug.Trace.traceM $ "I am here 2" ++ show type1 ++ "---" ++ show type2
+  --     (:) (type1, type2) <$> simplify (newA, newB)
+  --     -- simplify (newA, newB)
   -- | (Abs type1 _) <- t1,
   --   (Abs type2 _) <- t2 = do
   --     Debug.Trace.traceM $ "abs: " ++ show type1 ++ "---" ++ show type2
@@ -494,7 +494,7 @@ normalize t = case t of
 getHead :: Term -> (Term, [Term])
 getHead t = get t []
   where get (App a b _) ctx  = get a (b : ctx)
-        -- get (Abs _ body) ctx = get body ctx
+        get (Abs _ body) ctx = get body ctx
         get tt          ctx  = (tt, ctx)
 
 getHeadConstant :: Term -> Maybe Constant
@@ -519,6 +519,7 @@ getTermType (Constant (_, t)) = t
 getTermType (Var (_, t))      = t
 getTermType (FreeVar (_, t))  = t
 getTermType (App _ _ t)       = t
+-- getTermType (Abs t body)      = Abs t $ getTermType body
 getTermType (Abs t body)      = do
   let tType = getTermType t
   let bodyType = getTermType body

@@ -103,7 +103,7 @@ translate ctx t tType = case t of
     --       translate (IU.add ctx fvName betaTerm) (substitute fv 0 body) (App vMetaVar betaTerm starType)
 
 buildImplication :: Term -> Term -> Term
-buildImplication t1 t2 | getTermType t2 == Abs t1 starType = Abs t1 (App t2 (Var (0, t1)) starType)
+buildImplication t1 t2@(Abs arg t2b) | getTermType t1 == starType, arg == t1, getTermType t2b == starType = Abs t1 (App t2 (Var (0, t1)) starType)
 -- buildImplication t1 t2 | getTermType t1 == starType && getTermType t2 == Abs t1 starType =
 --   let result = App
 --         (App (Constant ("->", Abs starType (Abs (Abs (H.raise 1 t1) starType) starType))) t1 (Abs (Abs t1 starType) starType))

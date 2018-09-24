@@ -38,7 +38,6 @@ spec = do
       let expected = buildImplication tType (Abs tType (App p (Var (0, tType)) starType))
       let ctx = IU.add IU.createMapContext fv0 fv0Type
 
-      -- TODO: randomizowany algorytm dla quorow
       let result = solvePiTerm ctx term
 
       traceM $ (show $ head result)
