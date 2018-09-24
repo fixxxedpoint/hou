@@ -54,8 +54,7 @@ runTranslate c t =
   let genEnum = toEnum . (1 +) . maximum . (:) 0 . getMetaFreeVars $ t in
   runGenFrom genEnum $ do
     resultName <- gen
-    resultTypeName <- gen
-    let resultType = MetaVar (resultName, MetaVar (resultTypeName, properTypeConstructor))
+    let resultType = MetaVar (resultName, starType)
     formula <- translate c t resultType
     return (formula, resultType)
 
@@ -70,19 +69,15 @@ translate ctx t tType = case t of
   App t1 t2 _ -> do
     Debug.Trace.traceM "App"
     betaName <- gen
-    betaTypesName <- gen
-    let betaType = (betaTypesName, properTypeConstructor)
-    let beta = (betaName, MetaVar betaType)
+    let beta = (betaName, starType)
     let betaTerm = MetaVar beta
     vName <- gen
-    vReturnTypeName <- gen
-    let vReturnType = MetaVar (vReturnTypeName, properTypeConstructor)
-    let v = (vName, Abs betaTerm vReturnType)
+    let v = (vName, Abs betaTerm starType)
     let vMetaVar = MetaVar v
     t1Formula <- translate ctx t1 vMetaVar
     t2Formula <- translate ctx t2 betaTerm
     t2WithTypes <- attachTypes t2
-    return $ (tType, (App vMetaVar t2WithTypes vReturnType)) : t1Formula ++ t2Formula
+    return $ (tType, (App vMetaVar t2WithTypes starType)) : t1Formula ++ t2Formula
       -- Exists betaType . Exists beta . Exists v $
       -- -- Exists beta . Exists v $
       --   And
@@ -92,20 +87,15 @@ translate ctx t tType = case t of
   Abs _ body -> do
     Debug.Trace.traceM "Abs"
     betaName <- gen
-    betaTypesName <- gen
-    let betaType = (betaTypesName, properTypeConstructor)
-    let beta = (betaName, MetaVar betaType)
+    let beta = (betaName, starType)
     let betaTerm = MetaVar beta
     vName <- gen
-    vReturnTypeName <- gen
-    vReturnTypeTypeName <- gen
-    let vReturnType = MetaVar (vReturnTypeName, MetaVar (vReturnTypeTypeName, properTypeConstructor))
-    let v = (vName, Abs betaTerm vReturnType)
+    let v = (vName, Abs betaTerm starType)
     let vMetaVar = MetaVar v
     fvName <- gen
     let fv = FreeVar (fvName, betaTerm)
-    (:) (tType, (Abs betaTerm (App vMetaVar (Var (0, betaTerm)) vReturnType))) <$>
-      translate (IU.add ctx fvName betaTerm) (substitute fv 0 body) (App vMetaVar fv vReturnType)
+    (:) (tType, (Abs betaTerm (App vMetaVar (Var (0, betaTerm)) starType))) <$>
+      translate (IU.add ctx fvName betaTerm) (substitute fv 0 body) (App vMetaVar fv starType)
     -- Exists betaType . Exists beta . Exists v .
     -- -- Exists beta . Exists v .
     --   And

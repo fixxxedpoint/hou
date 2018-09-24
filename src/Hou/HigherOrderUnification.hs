@@ -78,7 +78,7 @@ type Variable = (DeBruijnIndex, TermType)
 type FreeVariable = (FreeVarName, TermType)
 
 properTypeConstructor :: TermType
-properTypeConstructor = Uni -- Constant ("[]", Uni)
+properTypeConstructor = Constant ("[]", Uni)
 
 starType :: TermType
 starType = Constant ("*", Constant ("[]", Uni))
@@ -248,8 +248,17 @@ update mv term solution eqs = do
   let newSolution = merge thisSolution solution
   -- let newSolution = add solution mv term
   -- FIXME: verify this
-  (newSolution, (getTermType (MetaVar mv), getTermType term) : newEquations)
+  -- (newSolution, (getTermType (MetaVar mv), getTermType term) : newEquations)
+  (newSolution, (getTypeEquations (getTermType (MetaVar mv)) (getTermType term)) ++ newEquations)
   -- (newSolution, newEquations)
+
+getTypeEquations :: Term -> Term -> [Equation]
+getTypeEquations = getTypeEquations' []
+getTypeEquations' :: [Equation] -> Term -> Term -> [Equation]
+getTypeEquations' r t1 t2
+  | (Abs a1 b1) <- t1,
+    (Abs a2 b2) <- t2 = getTypeEquations' ((a1, a2) : r) b1 b2
+  | otherwise = (getTermType t1, getTermType t2) : r
 
 getMaxMetaFreeVar :: [Equation] -> MetaVariableName
 getMaxMetaFreeVar eqs =
@@ -279,8 +288,8 @@ simplify :: (L.NonDet m, MonadPlus m, MonadGen MetaVariableName m) => Equation -
 simplify (t1, t2)
   | t1 == t2 = do
       return [] -- check for metavars?
-  | Uni <- t1 = return []
-  | Uni <- t2 = return []
+  -- | Uni <- t1 = return []
+  -- | Uni <- t2 = return []
   | (Abs type1 a) <- t1,
     (Abs type2 b) <- t2,
     type1 == type2 = do
