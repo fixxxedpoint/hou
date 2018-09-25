@@ -234,8 +234,8 @@ unify' equations solution = L.interrupt $ callCC $ \exit -> do
   -- Debug.Trace.traceM $ "unify' equations: " ++ show simplified
   -- Debug.Trace.traceM ("unify' 3: " ++ show (isSolved simplified))
   when (null simplified) $ exit solution
-  (mv, term) <- generateStep =<< L.anyOf simplified
-  -- (mv, term) <- generateStep $ head simplified
+  -- (mv, term) <- generateStep =<< L.anyOf simplified
+  (mv, term) <- generateStep $ head simplified
   -- Debug.Trace.traceM $ "unify' generateStep: " ++ show (mv, term)
   let (newSolution, newEquations) = update mv term solution simplified
   -- guard (newEquations /= equations)
@@ -248,16 +248,20 @@ update mv term solution eqs = do
   let newSolution = merge thisSolution solution
   -- let newSolution = add solution mv term
   -- FIXME: verify this
-  (newSolution, (getTermType (MetaVar mv), getTermType term) : newEquations)
-  -- (newSolution, (getTypeEquations (getTermType (MetaVar mv)) (getTermType term)) ++ newEquations)
+  -- (newSolution, (getTermType (MetaVar mv), getTermType term) : newEquations)
+  (newSolution, (getTypeEquations (getTermType (MetaVar mv)) (getTermType term)) ++ newEquations)
   -- (newSolution, newEquations)
 
 getTypeEquations :: Term -> Term -> [Equation]
 getTypeEquations = getTypeEquations' []
 getTypeEquations' :: [Equation] -> Term -> Term -> [Equation]
 getTypeEquations' r t1 t2
+  | t1 == t2 = r
   | (Abs a1 b1) <- t1,
     (Abs a2 b2) <- t2 = getTypeEquations' ((a1, a2) : r) b1 b2
+  | t2 == starType = getTypeEquations' r t2 t1
+  | t1 == starType,
+    isStarType t2 = r
   | otherwise = (t1, t2) : r
 
 getMaxMetaFreeVar :: [Equation] -> MetaVariableName
@@ -287,6 +291,7 @@ sameName _ _                                         = False
 isStarType :: TermType -> Bool
 isStarType t
   | t == starType = True
+  | getTermType t == starType = True
   | (Abs arg body) <- t = isStarType arg && isStarType body
   | otherwise = False
 
@@ -297,16 +302,18 @@ simplify (t1, t2)
   -- | isStarType t1 && isStarType t2 = return []
   -- | Uni <- t1 = return []
   -- | Uni <- t2 = return []
-  -- | (Abs type1 a) <- t1,
-  --   (Abs type2 b) <- t2 = do
-  --   -- type1 == type2 = do
-  --     newVar <- gen
-  --     let newCons = FreeVar (newVar, type1)
-  --     let newA = substitute newCons 0 a
-  --     let newB = substitute newCons 0 b
-  --     -- Debug.Trace.traceM $ "I am here 2" ++ show type1 ++ "---" ++ show type2
-  --     (:) (type1, type2) <$> simplify (newA, newB)
-  --     -- simplify (newA, newB)
+  | (Abs type1 a) <- t1,
+    (Abs type2 b) <- t2 = do
+    -- type1 == type2 = do
+      newVar <- gen
+      let newCons = FreeVar (newVar, type1)
+      let newA = substitute newCons 0 a
+      let newB = substitute newCons 0 b
+      Debug.Trace.traceM $ "I am here 2" ++ show type1 ++ "---" ++ show type2
+      (:) (type1, type2) <$> simplify (newA, newB)
+      -- simplify (newA, newB) >>= \r -> return $ r ++ [(type1, type2)]
+      -- (++) (getTypeEquations type1 type2) <$> simplify (newA, newB)
+      simplify (newA, newB)
   -- | (Abs type1 _) <- t1,
   --   (Abs type2 _) <- t2 = do
   --     Debug.Trace.traceM $ "abs: " ++ show type1 ++ "---" ++ show type2
@@ -315,6 +322,7 @@ simplify (t1, t2)
     (c2, ctx2) <- getHead t2,
     isFreeVarOrConstant c1 && isFreeVarOrConstant c2 = do
       guard (sameName c1 c2) -- this can fail the whole process
+      -- guard (c1 == c2)
       (:) (getTermType c1, getTermType c2) <$> fold <$> mapM simplify (zip ctx1 ctx2) -- faster than using fixPointOfSimplify
   | isRigid t1 && isFlexible t2 = trace "rigid-flex" $ return [(t2, t1)]
   | isFlexible t1 && isRigid t2 = trace ("flex-rigid: " ++ show t1 ++ " --- " ++ show t2) $ return [(t1, t2)]
@@ -527,7 +535,7 @@ getTermType (Constant (_, t)) = t
 getTermType (Var (_, t))      = t
 getTermType (FreeVar (_, t))  = t
 getTermType (App _ _ t)       = t
--- getTermType (Abs t body)      = Abs t $ getTermType body
+-- getTermType (Abs t body)      = Abs t . getTermType $ body
 getTermType (Abs t body)      = do
   let tType = getTermType t
   let bodyType = getTermType body

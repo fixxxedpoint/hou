@@ -33,29 +33,14 @@ type PiTerm = Term
 
 type PiTermType = TermType
 
-newMetaVariable :: (MonadGen H.MetaVariableName m) => m H.MetaVariable
-newMetaVariable = do
-  newVar <- gen
-  return (newVar, H.starType)
-
-implication :: PiTerm -> PiTerm -> PiTerm
-implication t1 t2 | getTermType t1 == starType, getTermType t2 == Abs t1 starType =
-  App
-    (App
-      (Constant ("Π", Abs starType (Abs (Abs t1 starType) starType)))
-      t1
-      (Abs (Abs t1 starType) starType)
-    )
-    t2
-    starType
-
 runTranslate :: (Context c FreeVarName PiTermType) => c -> PiTerm -> ([Equation], PiTermType) -- (HouFormula, PiTermType)
 runTranslate c t =
   let genEnum = toEnum . (1 +) . maximum . (:) 0 . getMetaFreeVars $ t in
   runGenFrom genEnum $ do
     resultName <- gen
-    resultTypeName <- gen
-    let resultType = MetaVar (resultName, MetaVar (resultTypeName, starType))
+    -- resultTypeName <- gen
+    -- let resultType = MetaVar (resultName, MetaVar (resultTypeName, starType))
+    let resultType = MetaVar (resultName, starType)
     formula <- translate c t resultType
     return (formula, resultType)
 
@@ -73,8 +58,9 @@ translate ctx t tType = case t of
     let beta = (betaName, starType)
     let betaTerm = MetaVar beta
     vName <- gen
-    vReturnName <- gen
-    let vReturnType = MetaVar (vReturnName, starType)
+    -- vReturnName <- gen
+    -- let vReturnType = MetaVar (vReturnName, starType)
+    let vReturnType = starType
     let v = (vName, Abs betaTerm vReturnType)
     let vMetaVar = MetaVar v
     t1Formula <- translate ctx t1 vMetaVar
@@ -93,8 +79,9 @@ translate ctx t tType = case t of
     let beta = (betaName, starType)
     let betaTerm = MetaVar beta
     vName <- gen
-    vReturnName <- gen
-    let vReturnType = MetaVar (vReturnName, starType)
+    -- vReturnName <- gen
+    -- let vReturnType = MetaVar (vReturnName, starType)
+    let vReturnType = starType
     let v = (vName, Abs betaTerm vReturnType)
     let vMetaVar = MetaVar v
     fvName <- gen
@@ -112,10 +99,10 @@ buildImplication :: Term -> Term -> Term
 --   | getTermType t1 == starType, arg == t1,
 --     getTermType t2b == starType =
 --       Abs t1 (App t2 (Var (0, t1)) starType)
-buildImplication t1 t2@(Abs arg t2b)
-  | getTermType t1 == starType, arg == t1,
-    getTermType t2b == starType =
-    t2
+-- buildImplication t1 t2@(Abs arg t2b)
+--   | getTermType t1 == starType, arg == t1,
+--     getTermType t2b == starType =
+--     t2
 buildImplication t1 t2@(Abs arg t2b)
   | arg == t1 =
     t2

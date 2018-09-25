@@ -35,42 +35,42 @@ spec = do
               (App (FreeVar (fv0, Uni)) (Var (0, Uni)) Uni)
       let fv0Type =
             buildImplication tType (Abs tType (App p (Var (0, tType)) starType))
-      let expected = buildImplication tType (Abs tType (App p (Var (0, tType)) starType))
+      let expected = fv0Type -- buildImplication tType (Abs tType (App p (Var (0, tType)) starType))
       let ctx = IU.add IU.createMapContext fv0 fv0Type
 
       let result = solvePiTerm ctx term
 
       traceM $ (show $ head result)
 
-      result `shouldNotBe` []
+      -- result `shouldNotBe` []
+      result `shouldContain` [expected]
 
   describe "force a subterm to have a dependent type" $ do
     it "should return a proper type" $ do
-      let fv0 = 0
-      let fv1 = 1
-      let tType = Constant ("T", starType)
-      let fv1Type = Abs tType starType
-      let fv1Term = Constant ("P", fv1Type)
-      -- FIXME: this type looks wrong
-      let fv0Type =
-            buildImplication
-              (buildImplication tType (Abs tType (buildImplication (App fv1Term (Var (0, tType)) starType) (Abs (App fv1Term (Var (0, tType)) starType) (App fv1Term (Var (1, tType)) starType)))))
+        let fv0 = 0
+        let fv1 = 1
+        let tType = Constant ("T", starType)
+        let fv1Type = Abs tType starType
+        let fv1Term = Constant ("P", fv1Type)
+        let fv0Type =
+              buildImplication
+                (buildImplication tType (Abs tType (buildImplication (App fv1Term (Var (0, tType)) starType) (Abs (App fv1Term (Var (0, tType)) starType) (App fv1Term (Var (1, tType)) starType)))))
 
-              (Abs (buildImplication tType (Abs tType (buildImplication (App fv1Term (Var (0, tType)) starType) (Abs (App fv1Term (Var (0, tType)) starType) (App fv1Term (Var (1, tType)) starType))))) tType)
+                (Abs (buildImplication tType (Abs tType (buildImplication (App fv1Term (Var (0, tType)) starType) (Abs (App fv1Term (Var (0, tType)) starType) (App fv1Term (Var (1, tType)) starType))))) tType)
 
-      Debug.Trace.traceM $ "fv0Type: " ++ show fv0Type
-      let term =
-            App
-            (FreeVar (fv0, fv0Type))
-            (Abs Uni (Abs Uni (Var (0, Uni)))) Uni
+        -- Debug.Trace.traceM $ "fv0's type: " ++ show fv0Type
 
-      let ctx = IU.add IU.createMapContext fv0 fv0Type
+        let term =
+              App
+              (FreeVar (fv0, Uni))
+              (Abs Uni (Abs Uni (Var (0, Uni)))) Uni
 
-      let result = solvePiTerm ctx term
+        let ctx = IU.add IU.createMapContext fv0 fv0Type
 
-      traceM $ show $ head result
+        let result = solvePiTerm ctx term
 
-      result `shouldNotBe` []
+        -- tType `elem` result
+        result `shouldContain` [tType]
 
   -- describe "solve an small instance of the Post Correspondence Problem" $ do
   --   it "should find some solution" $ do
