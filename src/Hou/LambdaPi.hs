@@ -20,7 +20,6 @@ import           Hou.InferenceUtils         as IU
 import           Hou.Levels
 import           Hou.MixedPrefix
 import           Hou.Trace
-import qualified Debug.Trace
 
 import           Control.Applicative
 import           Control.Monad
@@ -53,7 +52,7 @@ translate ctx t tType = case t of
 
   -- Metavar of some metavar type of [] type (proper type constructor)
   App t1 t2 _ -> do
-    Debug.Trace.traceM "App"
+    traceM "App"
     betaName <- gen
     let beta = (betaName, starType)
     let betaTerm = MetaVar beta
@@ -74,7 +73,7 @@ translate ctx t tType = case t of
       --     (And t1Formula t2Formula)
 
   Abs _ body -> do
-    Debug.Trace.traceM "Abs"
+    traceM "Abs"
     betaName <- gen
     let beta = (betaName, starType)
     let betaTerm = MetaVar beta

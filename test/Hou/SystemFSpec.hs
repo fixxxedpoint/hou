@@ -9,8 +9,6 @@ import           Hou.SystemF
 
 import           Test.Hspec
 
-import           Debug.Trace
-
 
 spec :: Spec
 spec = do
@@ -83,8 +81,6 @@ spec = do
               )
 
       let result = inferTypes term
-
-      traceM $ show (head result)
 
       result `shouldNotBe` []
 

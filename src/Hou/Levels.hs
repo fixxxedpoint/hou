@@ -17,7 +17,6 @@ License     : MIT, see the file LICENSE
 module Hou.Levels where
 
 import           Hou.Trace
-import qualified Debug.Trace
 
 import           Control.Applicative as Appl
 import           Control.Monad.Cont

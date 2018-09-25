@@ -12,7 +12,6 @@ import           Hou.LambdaPi
 import           Hou.HigherOrderUnification
 import qualified Hou.SystemF as F
 import           Hou.InferenceUtils as IU
-import           Debug.Trace
 
 
 main :: IO ()

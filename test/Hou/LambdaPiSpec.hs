@@ -11,7 +11,6 @@ import           Hou.LambdaPi
 
 import           Test.Hspec
 import qualified Data.FMList as FML
-import           Debug.Trace
 
 
 spec = do
@@ -20,7 +19,6 @@ spec = do
       let term = Abs Uni (Var (0, Uni))
 
       let result = solvePiTerm createMapContext term
-      traceM $ show $ head result
 
       result `shouldNotBe` []
 
@@ -40,9 +38,6 @@ spec = do
 
       let result = solvePiTerm ctx term
 
-      traceM $ (show $ head result)
-
-      -- result `shouldNotBe` []
       result `shouldContain` [expected]
 
   describe "force a subterm to have a dependent type" $ do
@@ -58,8 +53,6 @@ spec = do
 
                 (Abs (buildImplication tType (Abs tType (buildImplication (App fv1Term (Var (0, tType)) starType) (Abs (App fv1Term (Var (0, tType)) starType) (App fv1Term (Var (1, tType)) starType))))) tType)
 
-        -- Debug.Trace.traceM $ "fv0's type: " ++ show fv0Type
-
         let term =
               App
               (FreeVar (fv0, Uni))
@@ -69,7 +62,6 @@ spec = do
 
         let result = solvePiTerm ctx term
 
-        -- tType `elem` result
         result `shouldContain` [tType]
 
   -- describe "solve an small instance of the Post Correspondence Problem" $ do

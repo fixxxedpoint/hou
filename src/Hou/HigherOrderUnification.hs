@@ -46,7 +46,6 @@ module Hou.HigherOrderUnification(
 
 import qualified Hou.Levels          as L
 import           Hou.Trace
-import qualified Debug.Trace
 
 import qualified Control.Applicative as Appl
 import           Control.Arrow
@@ -174,19 +173,19 @@ preunify' :: (Solution s, L.NonDet n)
           -> GenT MetaVariableName (L.NonDeterministicT r n) s
 preunify' [] solution = trace "preunify []" $ return solution
 preunify' equations solution = L.interrupt $ callCC $ \exit -> do
-  -- Debug.Trace.traceM $ "preunify': " ++ show equations
+  traceM $ "preunify': " ++ show equations
   normalized <- sequence $ (\(a, b) -> (,) <$> a <*> b) . (normalize *** normalize) <$> equations
-  -- Debug.Trace.traceM $ "are closed: " ++ show (and $ isClosed <$> [eq | (a, b) <- normalized, eq <- [a, b]])
+  traceM $ "are closed: " ++ show (and $ isClosed <$> [eq | (a, b) <- normalized, eq <- [a, b]])
   simplified <- fixPointOfSimplify normalized
-  -- Debug.Trace.traceM $ "preunify' simplified: " ++ show simplified
+  traceM $ "preunify' simplified: " ++ show simplified
   when (isSolved simplified) $ exit solution
   -- flexRigid <- L.anyOf . filter (\(a, b) -> isFlexible a && isRigid b) $ simplified
-  -- Debug.Trace.traceM $ show simplified
+  traceM $ show simplified
   let flexRigid = head . filter (\(a, b) -> isFlexible a && isRigid b) $ simplified
-  -- Debug.Trace.traceM $ "preunify' flexRigid: " ++ show flexRigid
+  traceM $ "preunify' flexRigid: " ++ show flexRigid
   (mv, term) <- generateStep flexRigid
   let (newSolution, newEquations) = update mv term solution simplified
-  -- Debug.Trace.traceM $ "preunify' newEquations: " ++ show newEquations
+  traceM $ "preunify' newEquations: " ++ show newEquations
   -- guard (newEquations /= equations)
   preunify' newEquations newSolution
 
@@ -218,9 +217,9 @@ unify :: (Solution s, L.NonDet n)
 unify eqs s = do
   lnf <- sequence $ (\(a, b) -> (,) <$> a <*> b) . (toLongNormalForm *** toLongNormalForm) <$> eqs
   presolution <- preunify lnf s
-  -- Debug.Trace.traceM $ "already preunified: " ++ show presolution
+  traceM $ "already preunified: " ++ show presolution
   result <- unify' ((apply presolution *** apply presolution) <$> lnf) presolution
-  Debug.Trace.traceM "finished"
+  traceM "finished"
   return result
 
 
@@ -231,12 +230,12 @@ unify' :: (Solution s, L.NonDet n)
 unify' equations solution = L.interrupt $ callCC $ \exit -> do
   normalized <- sequence $ (\(a, b) -> (,) <$> a <*> b) . (normalize *** normalize) <$> equations
   simplified <- fixPointOfSimplify normalized
-  -- Debug.Trace.traceM $ "unify' equations: " ++ show simplified
-  -- Debug.Trace.traceM ("unify' 3: " ++ show (isSolved simplified))
+  traceM $ "unify' equations: " ++ show simplified
+  traceM ("unify' 3: " ++ show (isSolved simplified))
   when (null simplified) $ exit solution
   -- (mv, term) <- generateStep =<< L.anyOf simplified
   (mv, term) <- generateStep $ head simplified
-  -- Debug.Trace.traceM $ "unify' generateStep: " ++ show (mv, term)
+  traceM $ "unify' generateStep: " ++ show (mv, term)
   let (newSolution, newEquations) = update mv term solution simplified
   -- guard (newEquations /= equations)
   unify' newEquations newSolution
@@ -298,10 +297,7 @@ isStarType t
 simplify :: (L.NonDet m, MonadPlus m, MonadGen MetaVariableName m) => Equation -> m [Equation]
 simplify (t1, t2)
   | t1 == t2 = do
-      return [] -- check for metavars?
-  -- | isStarType t1 && isStarType t2 = return []
-  -- | Uni <- t1 = return []
-  -- | Uni <- t2 = return []
+      return []
   | (Abs type1 a) <- t1,
     (Abs type2 b) <- t2,
     type1 == type2 = do
@@ -310,20 +306,14 @@ simplify (t1, t2)
       let newA = substitute newCons 0 a
       let newB = substitute newCons 0 b
       traceM $ "I am here 2" ++ show type1 ++ "---" ++ show type2
-      -- (:) (type1, type2) <$> simplify (newA, newB)
-      -- simplify (newA, newB) >>= \r -> return $ r ++ [(type1, type2)]
-      -- (++) (getTypeEquations type1 type2) <$> simplify (newA, newB)
       simplify (newA, newB)
-  -- | (Abs type1 _) <- t1,
-  --   (Abs type2 _) <- t2 = do
-  --     Debug.Trace.traceM $ "abs: " ++ show type1 ++ "---" ++ show type2
-  --     return [(type1, type2)]
   | (c1, ctx1) <- getHead t1,
     (c2, ctx2) <- getHead t2,
-    isFreeVarOrConstant c1 && isFreeVarOrConstant c2 = do
-      -- guard (sameName c1 c2) -- this can fail the whole process
-      guard (c1 == c2)
-      (:) (getTermType c1, getTermType c2) <$> fold <$> mapM simplify (zip ctx1 ctx2) -- faster than using fixPointOfSimplify
+    isFreeVarOrConstant c1 && isFreeVarOrConstant c2,
+    c1 == c2 = do
+      -- guard (c1 == c2)
+      -- (:) (getTermType c1, getTermType c2) <$> fold <$> mapM simplify (zip ctx1 ctx2) -- faster than using fixPointOfSimplify
+      fold <$> mapM simplify (zip ctx1 ctx2) -- faster than using fixPointOfSimplify
   | isRigid t1 && isFlexible t2 = trace "rigid-flex" $ return [(t2, t1)]
   | isFlexible t1 && isRigid t2 = trace ("flex-rigid: " ++ show t1 ++ " --- " ++ show t2) $ return [(t1, t2)]
   | isFlexible t1 && isFlexible t2 = trace "flex-flex" $ return [(t1, t2)]
@@ -376,11 +366,11 @@ generateStep (flex, rigid) | isFlexible flex = do
   traceM $ "before generate: " ++ show headConstant
   traceM $ "before generate head FreeVar: " ++ show headFreeVar
   traceM $ "before generate available terms: " ++ show availableTerms
-  -- Debug.Trace.traceM $ "generateStep rigid: " ++ show rigid
-  -- Debug.Trace.traceM  $ "generateStep flex: " ++ show flex
+  traceM $ "generateStep rigid: " ++ show rigid
+  traceM  $ "generateStep flex: " ++ show flex
   generatedTerm <- generate (getTermType flexTerm) availableTerms
   -- generatedTerm <- generate (getTermType rigid) availableTerms
-  -- Debug.Trace.traceM $ "generated term: " ++ show flexVariable ++ "---" ++ show generatedTerm
+  traceM $ "generated term: " ++ show flexVariable ++ "---" ++ show generatedTerm
   return (flexVariable, generatedTerm)
 generateStep (t1, t2) = fail $ "first term of the equation is not flexible: " ++ show t1 ++ "---" ++ show t2
 
@@ -396,14 +386,13 @@ generate varType availableTerms = do
   let matchingAssumptions = getMatchingTerms goal $ Var <$> assumptions
   let matchingTerms = getMatchingTerms goal availableTerms
   traceM $ "matching var type: " ++ show varType
-  -- Debug.Trace.traceM $ "matching var type: " ++ show varType
-  -- Debug.Trace.traceM $ "available terms: " ++ show availableTerms
+  traceM $ "available terms: " ++ show availableTerms
   traceM $ "Matching assumptions: " ++ show matchingAssumptions
   traceM $ "Matching terms: " ++ show matchingTerms
   traceM ("generate: " ++ show matchingAssumptions)
   traceM $ "is empty :" ++ show (null (matchingTerms ++ matchingAssumptions))
-  -- head <- L.anyOf $ matchingAssumptions ++ matchingTerms
-  head <- L.anyOf $ matchingTerms ++ matchingAssumptions
+  head <- L.anyOf $ matchingAssumptions ++ matchingTerms
+  -- head <- L.anyOf $ matchingTerms ++ matchingAssumptions
   traceM $ "generate head: " ++ show head ++ " --- " ++ show matchingAssumptions ++ " --- " ++ show matchingTerms
   result <- generateLongTerm assumptions head
   traceM ("generate result: " ++ show result)
@@ -418,9 +407,6 @@ generateLongTerm lambdas head = do
 
 generateLongBody :: (L.NonDet m, MonadGen MetaVariableName m) => [Variable] -> Term -> m Term
 generateLongBody variables head = do
-  -- if null variables then return head
-  -- else foldM newArgVar head $ getTermType . Var <$> trace ("assumptions: " ++ show assumptions) assumptions
-  -- foldM newArgVar head $ getTermType . Var <$> trace ("assumptions: " ++ show assumptions) assumptions
   result <- foldM newArgVar head $ getTermType . Var <$> trace ("assumptions: " ++ show assumptions) assumptions
   L.anyOf [result, head]
   where
