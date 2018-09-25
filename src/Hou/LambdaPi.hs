@@ -54,7 +54,8 @@ runTranslate c t =
   let genEnum = toEnum . (1 +) . maximum . (:) 0 . getMetaFreeVars $ t in
   runGenFrom genEnum $ do
     resultName <- gen
-    let resultType = MetaVar (resultName, starType)
+    resultTypeName <- gen
+    let resultType = MetaVar (resultName, MetaVar (resultTypeName, starType))
     formula <- translate c t resultType
     return (formula, resultType)
 
@@ -72,12 +73,14 @@ translate ctx t tType = case t of
     let beta = (betaName, starType)
     let betaTerm = MetaVar beta
     vName <- gen
-    let v = (vName, Abs betaTerm starType)
+    vReturnName <- gen
+    let vReturnType = MetaVar (vReturnName, starType)
+    let v = (vName, Abs betaTerm vReturnType)
     let vMetaVar = MetaVar v
     t1Formula <- translate ctx t1 vMetaVar
     t2Formula <- translate ctx t2 betaTerm
     t2WithTypes <- attachTypes t2
-    return $ (tType, (App vMetaVar t2WithTypes starType)) : t1Formula ++ t2Formula
+    return $ (tType, (App vMetaVar t2WithTypes vReturnType)) : t1Formula ++ t2Formula
       -- Exists betaType . Exists beta . Exists v $
       -- -- Exists beta . Exists v $
       --   And
@@ -90,12 +93,14 @@ translate ctx t tType = case t of
     let beta = (betaName, starType)
     let betaTerm = MetaVar beta
     vName <- gen
-    let v = (vName, Abs betaTerm starType)
+    vReturnName <- gen
+    let vReturnType = MetaVar (vReturnName, starType)
+    let v = (vName, Abs betaTerm vReturnType)
     let vMetaVar = MetaVar v
     fvName <- gen
     let fv = FreeVar (fvName, betaTerm)
-    (:) (tType, (Abs betaTerm (App vMetaVar (Var (0, betaTerm)) starType))) <$>
-      translate (IU.add ctx fvName betaTerm) (substitute fv 0 body) (App vMetaVar fv starType)
+    (:) (tType, (Abs betaTerm (App vMetaVar (Var (0, betaTerm)) vReturnType))) <$>
+      translate (IU.add ctx fvName betaTerm) (substitute fv 0 body) (App vMetaVar fv vReturnType)
     -- Exists betaType . Exists beta . Exists v .
     -- -- Exists beta . Exists v .
     --   And
@@ -103,7 +108,17 @@ translate ctx t tType = case t of
     --       translate (IU.add ctx fvName betaTerm) (substitute fv 0 body) (App vMetaVar betaTerm starType)
 
 buildImplication :: Term -> Term -> Term
-buildImplication t1 t2@(Abs arg t2b) | getTermType t1 == starType, arg == t1, getTermType t2b == starType = Abs t1 (App t2 (Var (0, t1)) starType)
+-- buildImplication t1 t2@(Abs arg t2b)
+--   | getTermType t1 == starType, arg == t1,
+--     getTermType t2b == starType =
+--       Abs t1 (App t2 (Var (0, t1)) starType)
+buildImplication t1 t2@(Abs arg t2b)
+  | getTermType t1 == starType, arg == t1,
+    getTermType t2b == starType =
+    t2
+buildImplication t1 t2@(Abs arg t2b)
+  | arg == t1 =
+    t2
 -- buildImplication t1 t2 | getTermType t1 == starType && getTermType t2 == Abs t1 starType =
 --   let result = App
 --         (App (Constant ("->", Abs starType (Abs (Abs (H.raise 1 t1) starType) starType))) t1 (Abs (Abs t1 starType) starType))
@@ -123,54 +138,6 @@ buildImplication t1 t2@(Abs arg t2b) | getTermType t1 == starType, arg == t1, ge
 -- TermType -> *.
 -- WARNING: you shouldn't forget their types this way. It makes it impossible to guess some
 -- application of terms, or rather can make it non-normalizable.
-typeOf :: (Context c FreeVarName PiTermType)
-       => c
-       -> PiTerm
-       -> Maybe (PiTermType, [Equation])
-typeOf c t = do
-  let genEnum = toEnum . (1 +) . maximum . (:) 0 . getMetaFreeVars $ t
-  runGenTFrom genEnum $ do
-    resultName <- gen
-    let resultType = MetaVar (resultName, starType)
-    eqs <- typeOf' c t resultType
-    return (resultType, eqs)
-
-typeOf' :: (Context c FreeVarName PiTermType, MonadGen MetaVariableName m, MonadPlus m)
-       => c
-       -> PiTerm
-       -> PiTermType
-       -> m [Equation]
-typeOf' c t tType = case t of
-  FreeVar (varName, _) -> maybe mzero (\x -> return [(tType, x)]) $ IU.lookup c varName
-
-  App t1 t2 _ -> do
-    argName <- gen
-    let argType = MetaVar (argName, starType)
-    resultName <- gen
-    let resultType = MetaVar (resultName, Abs argType starType)
-    eq1 <- typeOf' c t1 (buildImplication argType resultType)
-    traceM $ "eq1: " ++ show eq1
-    eq2 <- typeOf' c t2 argType
-    traceM $ "eq2: " ++ show eq2
-    -- typedT2 <- attachTypes t2
-    -- let appResult = App resultType typedT2 starType
-    let appResult = App resultType t2 starType
-    return $ (tType, appResult) : eq1 ++ eq2
-
-  Abs _ body -> do
-    mvName <- gen
-    let mv = MetaVar (mvName, starType)
-    freeVarName <- gen
-    let fv = FreeVar (freeVarName, mv)
-    returnName <- gen
-    let returnType = MetaVar (returnName, Abs mv starType)
-    -- argName <- gen
-    -- let argValue = MetaVar (argName, mv)
-    -- eqs <- typeOf' c (substitute fv 0 body) (App returnType argValue starType)
-    eqs <- typeOf' (IU.add c freeVarName mv) (substitute fv 0 body) (App returnType fv starType)
-    let absResult = buildImplication mv (Abs mv (App returnType (Var (0, mv)) starType))
-    return $ (tType, absResult) : eqs
-  _ -> fail "invalid term"
 
 attachTypes :: (MonadGen MetaVariableName m) => PiTerm -> m PiTerm
 attachTypes t = do

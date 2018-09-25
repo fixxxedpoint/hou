@@ -248,8 +248,8 @@ update mv term solution eqs = do
   let newSolution = merge thisSolution solution
   -- let newSolution = add solution mv term
   -- FIXME: verify this
-  -- (newSolution, (getTermType (MetaVar mv), getTermType term) : newEquations)
-  (newSolution, (getTypeEquations (getTermType (MetaVar mv)) (getTermType term)) ++ newEquations)
+  (newSolution, (getTermType (MetaVar mv), getTermType term) : newEquations)
+  -- (newSolution, (getTypeEquations (getTermType (MetaVar mv)) (getTermType term)) ++ newEquations)
   -- (newSolution, newEquations)
 
 getTypeEquations :: Term -> Term -> [Equation]
@@ -258,7 +258,7 @@ getTypeEquations' :: [Equation] -> Term -> Term -> [Equation]
 getTypeEquations' r t1 t2
   | (Abs a1 b1) <- t1,
     (Abs a2 b2) <- t2 = getTypeEquations' ((a1, a2) : r) b1 b2
-  | otherwise = (getTermType t1, getTermType t2) : r
+  | otherwise = (t1, t2) : r
 
 getMaxMetaFreeVar :: [Equation] -> MetaVariableName
 getMaxMetaFreeVar eqs =
@@ -284,10 +284,17 @@ sameName (FreeVar (name1, _)) (FreeVar (name2, _))   | name1 == name2 = True
 sameName (Constant (name1, _)) (Constant (name2, _)) | name1 == name2 = True
 sameName _ _                                         = False
 
+isStarType :: TermType -> Bool
+isStarType t
+  | t == starType = True
+  | (Abs arg body) <- t = isStarType arg && isStarType body
+  | otherwise = False
+
 simplify :: (L.NonDet m, MonadPlus m, MonadGen MetaVariableName m) => Equation -> m [Equation]
 simplify (t1, t2)
   | t1 == t2 = do
       return [] -- check for metavars?
+  -- | isStarType t1 && isStarType t2 = return []
   -- | Uni <- t1 = return []
   -- | Uni <- t2 = return []
   -- | (Abs type1 a) <- t1,
@@ -354,7 +361,7 @@ generateStep (flex, rigid) | isFlexible flex = do
   let headConstant = getHeadConstant rigid
   let headFreeVar  = getHeadFreeVar rigid
   let headMetaVar  = getHeadMetaVar rigid
-  let availableTerms = rigid :
+  let availableTerms = -- rigid :
                        (Constant <$> maybeToList headConstant) ++
                        (FreeVar <$> maybeToList headFreeVar) ++
                        (filter (/= flexTerm) $ MetaVar <$> maybeToList headMetaVar)
@@ -364,6 +371,7 @@ generateStep (flex, rigid) | isFlexible flex = do
   -- Debug.Trace.traceM $ "generateStep rigid: " ++ show rigid
   -- Debug.Trace.traceM  $ "generateStep flex: " ++ show flex
   generatedTerm <- generate (getTermType flexTerm) availableTerms
+  -- generatedTerm <- generate (getTermType rigid) availableTerms
   -- Debug.Trace.traceM $ "generated term: " ++ show flexVariable ++ "---" ++ show generatedTerm
   return (flexVariable, generatedTerm)
 generateStep (t1, t2) = fail $ "first term of the equation is not flexible: " ++ show t1 ++ "---" ++ show t2

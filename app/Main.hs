@@ -17,33 +17,38 @@ import           Debug.Trace
 
 main :: IO ()
 main = do
-  input <- getContents
-  let term = read input
-  print $ F.inferType term
+  -- input <- getContents
+  -- let term = read input
+  -- print $ F.inferType term
 
-  -- let fv0 = 0
-  -- let fv1 = 1
-  -- let tType = Constant ("T", starType)
-  -- let fv1Type = Abs tType starType
-  -- let fv1Term = Constant ("P", fv1Type)
-  -- let fv0Type =
-  --       buildImplication
-  --         (buildImplication tType (Abs tType (buildImplication (App fv1Term (Var (0, tType)) starType) (Abs (App fv1Term (Var (0, tType)) starType) (App fv1Term (Var (1, tType)) starType)))))
+  let term = Abs Uni (Var (0, Uni))
 
-  --         (Abs (buildImplication tType (Abs tType (buildImplication (App fv1Term (Var (0, tType)) starType) (Abs (App fv1Term (Var (0, tType)) starType) (App fv1Term (Var (1, tType)) starType))))) tType)
+  let result = solvePiTerm createMapContext term
+  print $ head result
 
-  -- -- Debug.Trace.traceM $ "fv0's type: " ++ show fv0Type
+  let fv0 = 0
+  let fv1 = 1
+  let tType = Constant ("T", starType)
+  let fv1Type = Abs tType starType
+  let fv1Term = Constant ("P", fv1Type)
+  let fv0Type =
+        buildImplication
+          (buildImplication tType (Abs tType (buildImplication (App fv1Term (Var (0, tType)) starType) (Abs (App fv1Term (Var (0, tType)) starType) (App fv1Term (Var (1, tType)) starType)))))
 
-  -- let term =
-  --       App
-  --       (FreeVar (fv0, Uni))
-  --       (Abs Uni (Abs Uni (Var (0, Uni)))) Uni
+          (Abs (buildImplication tType (Abs tType (buildImplication (App fv1Term (Var (0, tType)) starType) (Abs (App fv1Term (Var (0, tType)) starType) (App fv1Term (Var (1, tType)) starType))))) tType)
 
-  -- let ctx = IU.add IU.createMapContext fv0 fv0Type
+  -- Debug.Trace.traceM $ "fv0's type: " ++ show fv0Type
 
-  -- let result = solvePiTerm ctx term
+  let term =
+        App
+        (FreeVar (fv0, Uni))
+        (Abs Uni (Abs Uni (Var (0, Uni)))) Uni
 
-  -- putStrLn $ "result type: " ++ show (head result)
+  let ctx = IU.add IU.createMapContext fv0 fv0Type
+
+  let result = solvePiTerm ctx term
+
+  putStrLn $ "result type: " ++ show (head result)
 
 
   -- let term = F.Abs "x" (Just $ F.VarType 0) $ F.Var "x" Nothing
