@@ -66,7 +66,7 @@ preunify = do
 
   describe "preunify simple implication" $ do
     it "should return proper substitution" $ do
-      let term1 = App (App (Constant ("->", Abs someType (Abs someType someType))) (FreeVar (0, someType)) (Abs someType someType)) (FreeVar (0, someType)) (someType)
+      let term1 = App (App (Constant ("->", Abs someType (Abs someType someType))) (Constant ("0", someType)) (Abs someType someType)) (Constant ("0", someType)) (someType)
       let term2 = MetaVar (0, someType)
       let equation = (term1, term2)
 

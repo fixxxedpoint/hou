@@ -303,14 +303,14 @@ simplify (t1, t2)
   -- | Uni <- t1 = return []
   -- | Uni <- t2 = return []
   | (Abs type1 a) <- t1,
-    (Abs type2 b) <- t2 = do
-    -- type1 == type2 = do
+    (Abs type2 b) <- t2,
+    type1 == type2 = do
       newVar <- gen
       let newCons = FreeVar (newVar, type1)
       let newA = substitute newCons 0 a
       let newB = substitute newCons 0 b
-      Debug.Trace.traceM $ "I am here 2" ++ show type1 ++ "---" ++ show type2
-      (:) (type1, type2) <$> simplify (newA, newB)
+      traceM $ "I am here 2" ++ show type1 ++ "---" ++ show type2
+      -- (:) (type1, type2) <$> simplify (newA, newB)
       -- simplify (newA, newB) >>= \r -> return $ r ++ [(type1, type2)]
       -- (++) (getTypeEquations type1 type2) <$> simplify (newA, newB)
       simplify (newA, newB)
@@ -321,8 +321,8 @@ simplify (t1, t2)
   | (c1, ctx1) <- getHead t1,
     (c2, ctx2) <- getHead t2,
     isFreeVarOrConstant c1 && isFreeVarOrConstant c2 = do
-      guard (sameName c1 c2) -- this can fail the whole process
-      -- guard (c1 == c2)
+      -- guard (sameName c1 c2) -- this can fail the whole process
+      guard (c1 == c2)
       (:) (getTermType c1, getTermType c2) <$> fold <$> mapM simplify (zip ctx1 ctx2) -- faster than using fixPointOfSimplify
   | isRigid t1 && isFlexible t2 = trace "rigid-flex" $ return [(t2, t1)]
   | isFlexible t1 && isRigid t2 = trace ("flex-rigid: " ++ show t1 ++ " --- " ++ show t2) $ return [(t1, t2)]
@@ -371,7 +371,7 @@ generateStep (flex, rigid) | isFlexible flex = do
   let headMetaVar  = getHeadMetaVar rigid
   let availableTerms = -- rigid :
                        (Constant <$> maybeToList headConstant) ++
-                       (FreeVar <$> maybeToList headFreeVar) ++
+                       -- (FreeVar <$> maybeToList headFreeVar) ++
                        (filter (/= flexTerm) $ MetaVar <$> maybeToList headMetaVar)
   traceM $ "before generate: " ++ show headConstant
   traceM $ "before generate head FreeVar: " ++ show headFreeVar
@@ -409,17 +409,20 @@ generate varType availableTerms = do
   traceM ("generate result: " ++ show result)
   toLongNormalForm result
 
-generateLongTerm :: (MonadGen MetaVariableName m) => [Variable] -> Term -> m Term
+generateLongTerm :: (L.NonDet m, MonadGen MetaVariableName m) => [Variable] -> Term -> m Term
 generateLongTerm lambdas head = do
   traceM ("long term head: " ++ show head)
   body <- generateLongBody lambdas head
   traceM ("long term: " ++ show body)
   return $ Data.Foldable.foldr (Abs . getTermType . Var) body lambdas
 
-generateLongBody :: (MonadGen MetaVariableName m) => [Variable] -> Term -> m Term
-generateLongBody variables head =
-  if null variables then return head
-  else foldM newArgVar head $ getTermType . Var <$> trace ("assumptions: " ++ show assumptions) assumptions
+generateLongBody :: (L.NonDet m, MonadGen MetaVariableName m) => [Variable] -> Term -> m Term
+generateLongBody variables head = do
+  -- if null variables then return head
+  -- else foldM newArgVar head $ getTermType . Var <$> trace ("assumptions: " ++ show assumptions) assumptions
+  -- foldM newArgVar head $ getTermType . Var <$> trace ("assumptions: " ++ show assumptions) assumptions
+  result <- foldM newArgVar head $ getTermType . Var <$> trace ("assumptions: " ++ show assumptions) assumptions
+  L.anyOf [result, head]
   where
     (assumptions, _) = getAssumptionsAndGoal . getTermType $ head
 
@@ -535,13 +538,13 @@ getTermType (Constant (_, t)) = t
 getTermType (Var (_, t))      = t
 getTermType (FreeVar (_, t))  = t
 getTermType (App _ _ t)       = t
--- getTermType (Abs t body)      = Abs t . getTermType $ body
-getTermType (Abs t body)      = do
-  let tType = getTermType t
-  let bodyType = getTermType body
-  if tType == starType && bodyType == starType then starType
-    else if tType == starType && bodyType == properTypeConstructor then properTypeConstructor
-           else Abs t bodyType
+getTermType (Abs t body)      = Abs t . getTermType $ body
+-- getTermType (Abs t body)      = do
+--   let tType = getTermType t
+--   let bodyType = getTermType body
+--   if tType == starType && bodyType == starType then starType
+--     else if tType == starType && bodyType == properTypeConstructor then properTypeConstructor
+--            else Abs t bodyType
 getTermType Uni               = Uni
 
 setVarType :: Term -> TermType -> Term
