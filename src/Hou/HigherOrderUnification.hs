@@ -22,6 +22,7 @@ module Hou.HigherOrderUnification(
   DeBruijnIndex,
   MetaVariableName,
   FreeVarName,
+  ConstantName,
   Solution(..),
   getTermType,
   someType,
@@ -310,16 +311,14 @@ simplify (t1, t2)
   | (c1, ctx1) <- getHead t1,
     (c2, ctx2) <- getHead t2,
     isFreeVarOrConstant c1 && isFreeVarOrConstant c2,
-    c1 == c2 = do
-      -- guard (c1 == c2)
-      -- (:) (getTermType c1, getTermType c2) <$> fold <$> mapM simplify (zip ctx1 ctx2) -- faster than using fixPointOfSimplify
-      fold <$> mapM simplify (zip ctx1 ctx2) -- faster than using fixPointOfSimplify
+    sameName c1 c2 = do
+      argsEqs <- fold <$> mapM simplify (zip ctx1 ctx2) -- faster than using fixPointOfSimplify
+      return $ (getTermType c1, getTermType c2) : argsEqs
   | isRigid t1 && isFlexible t2 = trace "rigid-flex" $ return [(t2, t1)]
   | isFlexible t1 && isRigid t2 = trace ("flex-rigid: " ++ show t1 ++ " --- " ++ show t2) $ return [(t1, t2)]
   | isFlexible t1 && isFlexible t2 = trace "flex-flex" $ return [(t1, t2)]
   | otherwise = trace ("otherwise: " ++ show t1 ++ "---" ++ show t2) L.failure
   -- | otherwise = trace ("otherwise: " ++ show t1 ++ "---" ++ show t2) $ return [(t1, t2)]
-  -- | otherwise = fail "otherwise"
 
 fixPointOfSimplify :: (L.NonDet m, MonadPlus m, MonadGen MetaVariableName m) => [Equation] -> m [Equation]
 fixPointOfSimplify cs = do
