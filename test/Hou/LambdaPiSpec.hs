@@ -187,3 +187,66 @@ spec = do
   --     let result = solvePiTerm ctx term
 
   --     result `shouldNotBe` []
+
+tType :: TermType
+tType = Constant ("T", starType)
+
+aConst :: Term
+aConst = FreeVar (-1, Abs tType tType)
+
+bConst :: Term
+bConst = FreeVar (-2, Abs tType tType)
+
+cConst :: Term
+cConst = FreeVar (-3, tType)
+
+dConst :: Term
+dConst = FreeVar (-4, tType)
+
+fConstant :: Term
+fConstant = FreeVar (-5, undefined)
+
+type Letter = Bool
+type Word = [Letter]
+
+a :: Letter
+a = False
+
+b :: Letter
+b = True
+
+createWord :: Hou.LambdaPiSpec.Word -> Term
+createWord []             = Abs tType (Var (0, tType))
+createWord (False : rest) = Abs tType (App aConst (App (createWord rest) (Var (0, tType)) tType) Uni)
+createWord (True : rest)  = Abs tType (App bConst (App (createWord rest) (Var (0, tType)) tType) Uni)
+
+createInstance :: [(Hou.LambdaPiSpec.Word, Hou.LambdaPiSpec.Word)] -> Term
+createInstance words = do
+  let w1 = createWord . fst <$> words
+  let w2 = createWord . snd <$> words
+  let n = length words
+  let apply to = foldl (\a b -> App a b Uni) to
+  let f = Var (2, Uni)
+  let g = Var (1, Uni)
+  let h = Var (0, Uni)
+  let f1 = App f (apply g (replicate n aConst)) Uni
+  let h1 = App h (apply g w1) Uni
+  let h2 = App h (apply g w2) Uni
+  let y1 = Abs Uni (Var (0, Uni))
+  let y2 = Abs Uni dConst
+  let f2 = App (App fConstant cConst Uni) (apply g (replicate n y1)) Uni
+  let f3 = App (App fConstant dConst Uni) (apply g (replicate n y2)) Uni
+  Abs Uni . Abs Uni . Abs Uni $
+    App
+      (App
+        (App
+          (App
+            f1
+            h1
+            Uni)
+          h2
+          Uni)
+        f2
+        Uni)
+        f3
+        Uni
