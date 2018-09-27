@@ -126,6 +126,7 @@ buildImplication t1 t2@(Abs arg t2b)
 -- application of terms, or rather can make it non-normalizable.
 
 attachTypes :: (MonadGen MetaVariableName m) => PiTerm -> m PiTerm
+-- attachTypes t = return t
 attachTypes t = do
   newTypeName <- gen
   let newType = MetaVar (newTypeName, starType)

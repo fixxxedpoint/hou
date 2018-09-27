@@ -47,6 +47,7 @@ module Hou.HigherOrderUnification(
 
 import qualified Hou.Levels          as L
 import           Hou.Trace
+import qualified Debug.Trace
 
 import qualified Control.Applicative as Appl
 import           Control.Arrow
@@ -174,9 +175,9 @@ preunify' :: (Solution s, L.NonDet n)
           -> GenT MetaVariableName (L.NonDeterministicT r n) s
 preunify' [] solution = trace "preunify []" $ return solution
 preunify' equations solution = L.interrupt $ callCC $ \exit -> do
-  traceM $ "preunify': " ++ show equations
+  Debug.Trace.traceM $ "preunify': " ++ show equations
   normalized <- sequence $ (\(a, b) -> (,) <$> a <*> b) . (normalize *** normalize) <$> equations
-  traceM $ "are closed: " ++ show (and $ isClosed <$> [eq | (a, b) <- normalized, eq <- [a, b]])
+  -- traceM $ "are closed: " ++ show (and $ isClosed <$> [eq | (a, b) <- normalized, eq <- [a, b]])
   simplified <- fixPointOfSimplify normalized
   traceM $ "preunify' simplified: " ++ show simplified
   when (isSolved simplified) $ exit solution
@@ -231,7 +232,7 @@ unify' :: (Solution s, L.NonDet n)
 unify' equations solution = L.interrupt $ callCC $ \exit -> do
   normalized <- sequence $ (\(a, b) -> (,) <$> a <*> b) . (normalize *** normalize) <$> equations
   simplified <- fixPointOfSimplify normalized
-  traceM $ "unify' equations: " ++ show simplified
+  Debug.Trace.traceM $ "unify' equations: " ++ show simplified
   traceM ("unify' 3: " ++ show (isSolved simplified))
   when (null simplified) $ exit solution
   -- (mv, term) <- generateStep =<< L.anyOf simplified
@@ -299,25 +300,41 @@ simplify :: (L.NonDet m, MonadPlus m, MonadGen MetaVariableName m) => Equation -
 simplify (t1, t2)
   | t1 == t2 = do
       return []
+  -- | (Abs type1 a) <- t1,
+  --   (Abs type2 b) <- t2,
+  --   type1 == type2 = do
+  --     newVar <- gen
+  --     let newCons = FreeVar (newVar, type1)
+  --     let newA = substitute newCons 0 a
+  --     let newB = substitute newCons 0 b
+  --     traceM $ "I am here 2" ++ show type1 ++ "---" ++ show type2
+  --     simplify (newA, newB)
   | (Abs type1 a) <- t1,
-    (Abs type2 b) <- t2,
-    type1 == type2 = do
+    (Abs type2 b) <- t2 = do
       newVar <- gen
-      let newCons = FreeVar (newVar, type1)
+      -- let newCons = FreeVar (newVar, type1)
+      let newCons = MetaVar (newVar, type1)
       let newA = substitute newCons 0 a
       let newB = substitute newCons 0 b
-      traceM $ "I am here 2" ++ show type1 ++ "---" ++ show type2
-      simplify (newA, newB)
+      Debug.Trace.traceM $ "I am here 2" ++ show type1 ++ "---" ++ show type2
+      simplified <- simplify (newA, newB)
+      return $ (type1, type2) : simplified
   | (c1, ctx1) <- getHead t1,
     (c2, ctx2) <- getHead t2,
     isFreeVarOrConstant c1 && isFreeVarOrConstant c2,
     sameName c1 c2 = do
       argsEqs <- fold <$> mapM simplify (zip ctx1 ctx2) -- faster than using fixPointOfSimplify
       return $ (getTermType c1, getTermType c2) : argsEqs
+  -- | (c1, ctx1) <- getHead t1,
+  --   (c2, ctx2) <- getHead t2,
+  --   isFreeVarOrConstant c1 && isFreeVarOrConstant c2,
+  --   c1 == c2 = do
+  --     argEqs <- fold <$> mapM simplify (zip ctx1 ctx2) -- faster than using fixPointOfSimplify
+  --     return $ argEqs ++ [(t1, t2)]
   | isRigid t1 && isFlexible t2 = trace "rigid-flex" $ return [(t2, t1)]
   | isFlexible t1 && isRigid t2 = trace ("flex-rigid: " ++ show t1 ++ " --- " ++ show t2) $ return [(t1, t2)]
   | isFlexible t1 && isFlexible t2 = trace "flex-flex" $ return [(t1, t2)]
-  | otherwise = trace ("otherwise: " ++ show t1 ++ "---" ++ show t2) L.failure
+  | otherwise = Debug.Trace.trace ("otherwise: " ++ show t1 ++ "---" ++ show t2) L.failure
   -- | otherwise = trace ("otherwise: " ++ show t1 ++ "---" ++ show t2) $ return [(t1, t2)]
 
 fixPointOfSimplify :: (L.NonDet m, MonadPlus m, MonadGen MetaVariableName m) => [Equation] -> m [Equation]
@@ -358,9 +375,9 @@ generateStep (flex, rigid) | isFlexible flex = do
   let headConstant = getHeadConstant rigid
   let headFreeVar  = getHeadFreeVar rigid
   let headMetaVar  = getHeadMetaVar rigid
-  let availableTerms = -- rigid :
+  let availableTerms = rigid :
                        (Constant <$> maybeToList headConstant) ++
-                       -- (FreeVar <$> maybeToList headFreeVar) ++
+                       (FreeVar <$> maybeToList headFreeVar) ++
                        (filter (/= flexTerm) $ MetaVar <$> maybeToList headMetaVar)
   traceM $ "before generate: " ++ show headConstant
   traceM $ "before generate head FreeVar: " ++ show headFreeVar
@@ -369,6 +386,8 @@ generateStep (flex, rigid) | isFlexible flex = do
   traceM  $ "generateStep flex: " ++ show flex
   generatedTerm <- generate (getTermType flexTerm) availableTerms
   -- generatedTerm <- generate (getTermType rigid) availableTerms
+  -- targetType <- L.anyOf [getTermType flexTerm, getTermType rigid]
+  -- generatedTerm <- generate targetType availableTerms
   traceM $ "generated term: " ++ show flexVariable ++ "---" ++ show generatedTerm
   return (flexVariable, generatedTerm)
 generateStep (t1, t2) = fail $ "first term of the equation is not flexible: " ++ show t1 ++ "---" ++ show t2
@@ -390,8 +409,8 @@ generate varType availableTerms = do
   traceM $ "Matching terms: " ++ show matchingTerms
   traceM ("generate: " ++ show matchingAssumptions)
   traceM $ "is empty :" ++ show (null (matchingTerms ++ matchingAssumptions))
-  head <- L.anyOf $ matchingAssumptions ++ matchingTerms
-  -- head <- L.anyOf $ matchingTerms ++ matchingAssumptions
+  -- head <- L.anyOf $ matchingAssumptions ++ matchingTerms
+  head <- L.anyOf $ matchingTerms ++ matchingAssumptions
   traceM $ "generate head: " ++ show head ++ " --- " ++ show matchingAssumptions ++ " --- " ++ show matchingTerms
   result <- generateLongTerm assumptions head
   traceM ("generate result: " ++ show result)
@@ -458,6 +477,17 @@ isSolved equations = trace ("isSolved: " ++ show equations) $
   and $ uncurry (&&) . (isFlexible *** isFlexible) <$> equations
 
 substitute :: Term -> DeBruijnIndex -> Term -> Term
+-- substitute new index term = case term of
+--   Var (deBruijnIndex, varType) -> case compare deBruijnIndex index of
+--     LT -> Var (deBruijnIndex, varType)
+--     EQ -> new
+--     GT -> Var (deBruijnIndex-1, varType)
+--   App a b termType -> App (substitute new index a) (substitute new index b) termType
+--   Abs termType a -> Abs termType (substitute (raise 1 new) (index+1) a)
+--   MetaVar (name, mvType) -> MetaVar (name, mvType)
+--   Constant (name, consType) -> Constant (name, consType)
+--   FreeVar (name, fvType) -> FreeVar (name, fvType)
+--   _ -> term
 substitute new index term = case term of
   Var (deBruijnIndex, varType) -> case compare deBruijnIndex index of
     LT -> Var (deBruijnIndex, substitute new index varType)
@@ -498,7 +528,7 @@ normalize t = case t of
 getHead :: Term -> (Term, [Term])
 getHead t = get t []
   where get (App a b _) ctx  = get a (b : ctx)
-        get (Abs _ body) ctx = get body ctx
+        -- get (Abs _ body) ctx = get body ctx
         get tt          ctx  = (tt, ctx)
 
 getHeadConstant :: Term -> Maybe Constant

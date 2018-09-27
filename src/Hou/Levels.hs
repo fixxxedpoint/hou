@@ -153,7 +153,7 @@ iterDepth :: (Computation m, NonDet m)
 iterDepth step = runLevels . levelIter step
 
 iterDepthDefault :: (Computation m, NonDet m) => NonDeterministicT a (DepthBounded m) a -> m a
-iterDepthDefault = iterDepth 200
+iterDepthDefault = iterDepth 20
 
 interrupt :: (NonDet m) => m b -> m b
 interrupt v = v `choice` failure
