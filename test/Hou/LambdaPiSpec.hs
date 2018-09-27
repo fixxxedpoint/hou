@@ -26,6 +26,7 @@ spec = do
       Debug.Trace.traceM $ show $ head result
 
       result `shouldNotBe` []
+      Debug.Trace.traceM $ show $ sameNumberOfLambdas (Var (0,MetaVar (6,Constant ("*",Constant ("[]",Uni))))) (Var (0,Constant ("T",Constant ("*",Constant ("[]",Uni)))))
 
   describe "infere type for a term of the form \\lambda x . Fx, where F is of type \\lambda x . Px and P is \\lambda T . *" $ do
     it "should return some type" $ do
@@ -38,40 +39,41 @@ spec = do
               (App (FreeVar (fv0, Uni)) (Var (0, Uni)) Uni)
       let fv0Type =
             buildImplication tType (Abs tType (App p (Var (0, tType)) starType))
-      let expected = fv0Type -- buildImplication tType (Abs tType (App p (Var (0, tType)) starType))
+      let expected = fv0Type
       let ctx = IU.add IU.createMapContext fv0 fv0Type
 
       let result = solvePiTerm ctx term
 
       result `shouldContain` [expected]
-      Debug.Trace.traceM $ show $ head result
+      Debug.Trace.traceM $ "bla bla: " ++ (show $ head result)
       -- result `shouldNotBe` []
 
-  -- describe "force a subterm to have a dependent type" $ do
-  --   it "should return a proper type" $ do
-  --       let fv0 = 0
-  --       let fv1 = 1
-  --       let tType = Constant ("T", starType)
-  --       let fv1Type = Abs tType starType
-  --       let fv1Term = Constant ("P", fv1Type)
-  --       let fv0Type =
-  --             buildImplication
-  --               (buildImplication tType (Abs tType (buildImplication (App fv1Term (Var (0, tType)) starType) (Abs (App fv1Term (Var (0, tType)) starType) (App fv1Term (Var (1, tType)) starType)))))
+  describe "force a subterm to have a dependent type" $ do
+    it "should return a proper type" $ do
+        let fv0 = 0
+        let fv1 = 1
+        let tType = Constant ("T", starType)
+        let fv1Type = Abs tType starType
+        let fv1Term = Constant ("P", fv1Type)
+        let fv0Type =
+              buildImplication
+                (buildImplication tType (Abs tType (buildImplication (App fv1Term (Var (0, tType)) starType) (Abs (App fv1Term (Var (0, tType)) starType) (App fv1Term (Var (1, tType)) starType)))))
 
-  --               (Abs (buildImplication tType (Abs tType (buildImplication (App fv1Term (Var (0, tType)) starType) (Abs (App fv1Term (Var (0, tType)) starType) (App fv1Term (Var (1, tType)) starType))))) tType)
+                (Abs (buildImplication tType (Abs tType (buildImplication (App fv1Term (Var (0, tType)) starType) (Abs (App fv1Term (Var (0, tType)) starType) (App fv1Term (Var (1, tType)) starType))))) tType)
 
-  --       let term =
-  --             App
-  --             (FreeVar (fv0, Uni))
-  --             (Abs Uni (Abs Uni (Var (0, Uni)))) Uni
+        let term =
+              App
+              (FreeVar (fv0, Uni))
+              (Abs Uni (Abs Uni (Var (0, Uni)))) Uni
 
-  --       let ctx = IU.add IU.createMapContext fv0 fv0Type
+        let ctx = IU.add IU.createMapContext fv0 fv0Type
 
-  --       let result = solvePiTerm ctx term
+        let result = solvePiTerm ctx term
 
-  --       result `shouldContain` [tType]
+        result `shouldContain` [tType]
+        Debug.Trace.traceM $ "bla bla 2: " ++ (show $ head result)
 
-  -- describe "solve an small instance of the Post Correspondence Problem" $ do
+  -- describe "solve a small instance of the Post Correspondence Problem" $ do
   --   it "should find some solution" $ do
   --     -- let pcpInstance = [([a], [b, a, a]), ([a, b], [a, a]), ([b, b, a], [b, b])]
   --     let pcpInstance = [([a], [a])]

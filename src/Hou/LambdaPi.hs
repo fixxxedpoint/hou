@@ -144,6 +144,14 @@ attachTypes t = do
 solvePiTerm :: (Context c FreeVarName PiTermType) => c -> PiTerm -> [PiTermType]
 solvePiTerm c = FML.toList . solve' c
 
+noFreeVars :: PiTermType -> Bool
+noFreeVars (FreeVar _) = False
+noFreeVars (App a b t) = noFreeVars a && noFreeVars b && noFreeVars b
+noFreeVars (Abs t b) = noFreeVars t && noFreeVars b
+noFreeVars Uni = True
+noFreeVars t = noFreeVars . getTermType $ t
+
+
 solve' :: (Context c FreeVarName PiTermType) => c -> PiTerm -> FML.FMList PiTermType
 -- solve' c t = iterDepthDefault $ do
 --   (termType, equations) <- maybe failure return $ typeOf c t
@@ -153,4 +161,6 @@ solve' :: (Context c FreeVarName PiTermType) => c -> PiTerm -> FML.FMList PiTerm
 solve' c t = iterDepthDefault $ do
   let (formula, resultType) = runTranslate c t
   solution <- unifyNonDeterministic formula createListSolution
-  normalize $ apply solution resultType
+  result <- normalize $ apply solution resultType
+  guard (noFreeVars result)
+  return result

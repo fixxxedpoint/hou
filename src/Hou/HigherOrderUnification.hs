@@ -41,7 +41,8 @@ module Hou.HigherOrderUnification(
   getHead,
   substitute,
   raise,
-  isClosed
+  isClosed,
+  sameNumberOfLambdas
   )
   where
 
@@ -286,6 +287,7 @@ getMetaFreeVars' t r = case t of
 
 sameName :: Term -> Term -> Bool
 sameName (FreeVar (name1, _)) (FreeVar (name2, _))   | name1 == name2 = True
+sameName (Var (name1, _)) (Var (name2, _))   | name1 == name2 = True
 sameName (Constant (name1, _)) (Constant (name2, _)) | name1 == name2 = True
 sameName _ _                                         = False
 
@@ -295,6 +297,12 @@ isStarType t
   | getTermType t == starType = True
   | (Abs arg body) <- t = isStarType arg && isStarType body
   | otherwise = False
+
+sameNumberOfLambdas :: Term -> Term -> Bool
+sameNumberOfLambdas (Abs _ a) (Abs _ b) = sameNumberOfLambdas a b
+sameNumberOfLambdas (Abs _ _) _ = False
+sameNumberOfLambdas _ (Abs _ _) = False
+sameNumberOfLambdas _ _ = True
 
 simplify :: (L.NonDet m, MonadPlus m, MonadGen MetaVariableName m) => Equation -> m [Equation]
 simplify (t1, t2)
@@ -309,19 +317,25 @@ simplify (t1, t2)
   --     let newB = substitute newCons 0 b
   --     traceM $ "I am here 2" ++ show type1 ++ "---" ++ show type2
   --     simplify (newA, newB)
+  -- | (Abs type1 a) <- t1,
+  --   (Abs type2 b) <- t2 = do
+  --     newVar <- gen
+  --     -- let newCons = FreeVar (newVar, type1)
+  --     let newCons = MetaVar (newVar, type1)
+  --     let newA = substitute newCons 0 a
+  --     let newB = substitute newCons 0 b
+  --     Debug.Trace.traceM $ "I am here 2" ++ show type1 ++ "---" ++ show type2
+  --     simplified <- simplify (newA, newB)
+  --     return $ (type1, type2) : simplified
   | (Abs type1 a) <- t1,
     (Abs type2 b) <- t2 = do
-      newVar <- gen
-      -- let newCons = FreeVar (newVar, type1)
-      let newCons = MetaVar (newVar, type1)
-      let newA = substitute newCons 0 a
-      let newB = substitute newCons 0 b
-      Debug.Trace.traceM $ "I am here 2" ++ show type1 ++ "---" ++ show type2
-      simplified <- simplify (newA, newB)
+      simplified <- simplify (a, b)
       return $ (type1, type2) : simplified
   | (c1, ctx1) <- getHead t1,
     (c2, ctx2) <- getHead t2,
-    isFreeVarOrConstant c1 && isFreeVarOrConstant c2,
+    isFreeVarOrConstant c1,
+    isFreeVarOrConstant c2,
+    -- sameNumberOfLambdas t1 t2,
     sameName c1 c2 = do
       argsEqs <- fold <$> mapM simplify (zip ctx1 ctx2) -- faster than using fixPointOfSimplify
       return $ (getTermType c1, getTermType c2) : argsEqs
@@ -346,6 +360,7 @@ fixPointOfSimplify cs = do
 
 isFreeVarOrConstant :: Term -> Bool
 isFreeVarOrConstant (FreeVar _)  = True
+isFreeVarOrConstant (Var _)      = True
 isFreeVarOrConstant (Constant _) = True
 isFreeVarOrConstant _            = False
 
