@@ -50,6 +50,9 @@ translate ctx t tType = case t of
       Nothing -> fail "definition of a variable was not found in the context"
       (Just ctxType) -> return [(tType, ctxType)] -- return $ Equation tType ctxType
 
+  MetaVar (_, varType) -> return $ [(tType, varType)]
+  Var (_, varType) -> return $ [(tType, varType)]
+
   -- Metavar of some metavar type of [] type (proper type constructor)
   App t1 t2 _ -> do
     traceM "App"
@@ -84,8 +87,13 @@ translate ctx t tType = case t of
     let v = (vName, Abs betaTerm vReturnType)
     let vMetaVar = MetaVar v
     fvName <- gen
+    -- TODO: do not substitute by FreeVars, use Vars instead
     let fv = FreeVar (fvName, betaTerm)
-    (:) (tType, (Abs betaTerm (App vMetaVar (Var (0, betaTerm)) vReturnType))) <$>
+    -- let fv = MetaVar (fvName, betaTerm)
+    -- let fv = Var (0, betaTerm)
+    -- let newVar = Var (-1, betaTerm)
+    -- (:) (tType, (Abs betaTerm (App vMetaVar (Var (0, betaTerm)) vReturnType))) <$>
+    (:) (tType, Abs betaTerm (App vMetaVar (Var (0, betaTerm)) vReturnType)) <$>
       translate (IU.add ctx fvName betaTerm) (substitute fv 0 body) (App vMetaVar fv vReturnType)
     -- Exists betaType . Exists beta . Exists v .
     -- -- Exists beta . Exists v .
@@ -145,7 +153,7 @@ solvePiTerm :: (Context c FreeVarName PiTermType) => c -> PiTerm -> [PiTermType]
 solvePiTerm c = FML.toList . solve' c
 
 noFreeVars :: PiTermType -> Bool
-noFreeVars (FreeVar _) = False
+noFreeVars (FreeVar (name, _)) = name < 0
 noFreeVars (App a b t) = noFreeVars a && noFreeVars b && noFreeVars b
 noFreeVars (Abs t b) = noFreeVars t && noFreeVars b
 noFreeVars Uni = True
@@ -162,5 +170,5 @@ solve' c t = iterDepthDefault $ do
   let (formula, resultType) = runTranslate c t
   solution <- unifyNonDeterministic formula createListSolution
   result <- normalize $ apply solution resultType
-  guard (noFreeVars result)
+  -- guard (noFreeVars result)
   return result

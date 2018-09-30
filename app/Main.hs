@@ -23,10 +23,10 @@ main = do
   -- let term = read input
   -- print $ F.inferType term
 
-  -- let term = Abs Uni (Var (0, Uni))
+  let term = Abs Uni (Var (0, Uni))
 
-  -- let result = solvePiTerm createMapContext term
-  -- print $ head result
+  let result = solvePiTerm createMapContext term
+  print $ head result
 
   -- let fv0 = 0
   -- let fv1 = 1
@@ -53,21 +53,21 @@ main = do
   -- putStrLn $ "result type: " ++ show (head result)
 
 
-  let tType = Constant ("T", starType)
-  let fv0 = 0
-  let pType = Abs tType starType
-  let p = Constant ("P", pType)
-  let term =
-        Abs Uni
-          (App (FreeVar (fv0, Uni)) (Var (0, Uni)) Uni)
-  let fv0Type =
-        buildImplication tType (Abs tType (App p (Var (0, tType)) starType))
-  -- let expected = buildImplication tType (Abs tType (App p (Var (0, tType)) starType))
-  let ctx = IU.add IU.createMapContext fv0 fv0Type
+  -- let tType = Constant ("T", starType)
+  -- let fv0 = 0
+  -- let pType = Abs tType starType
+  -- let p = Constant ("P", pType)
+  -- let term =
+  --       Abs Uni
+  --         (App (FreeVar (fv0, Uni)) (Var (0, Uni)) Uni)
+  -- let fv0Type =
+  --       buildImplication tType (Abs tType (App p (Var (0, tType)) starType))
+  -- -- let expected = buildImplication tType (Abs tType (App p (Var (0, tType)) starType))
+  -- let ctx = IU.add IU.createMapContext fv0 fv0Type
 
-  let result = solvePiTerm ctx term
+  -- let result = solvePiTerm ctx term
 
-  Debug.Trace.traceM $ (show $ head result)
+  -- Debug.Trace.traceM $ (show $ head result)
 
   -- let term = F.Abs "x" (Just $ F.VarType 0) $ F.Var "x" Nothing
   -- let termsType = F.Implication (F.VarType 0) (F.VarType 0)
@@ -91,15 +91,14 @@ main = do
 
   -- print $ apply result term2
 
-  -- let pcpInstance = [([a], [b, a, a]), ([a, b], [a, a]), ([b, b, a], [b, b])]
-  -- let pcpInstance = [([a], [a])]
-  -- let (inferenceInstance, ctx) = createInstance createMapContext pcpInstance
-  -- print inferenceInstance
-  -- print $ size inferenceInstance
+  let pcpInstance = [([a], [b, a, a]), ([a, b], [a, a]), ([b, b, a], [b, b])]
+  let (inferenceInstance, ctx) = createInstance createMapContext pcpInstance
+  print inferenceInstance
+  print $ size inferenceInstance
 
-  -- let result = solvePiTerm ctx inferenceInstance
+  let result = solvePiTerm ctx inferenceInstance
 
-  -- print $ head result
+  print $ head result
 
 size :: Term -> Integer
 size (Abs _ body) = 1 + size body
@@ -171,10 +170,10 @@ createInstance ctx words = do
                   (cConst, tType),
                   (dConst, tType),
                   (fConstant, fConstType)]
-  -- (Abs Uni . Abs Uni . Abs Uni $
-  --   App (App (App (App f1 h1 Uni) h2 Uni) f2 Uni) f3 Uni,
-  --   newCtx)
+  (Abs Uni . Abs Uni . Abs Uni $
+    App (App (App (App f1 h1 Uni) h2 Uni) f2 Uni) f3 Uni,
+    newCtx)
   -- (Abs Uni . Abs Uni . Abs Uni $
   --   App (App fConstant cConst Uni) (apply g (replicate 1 y1)) Uni, newCtx)
   -- (Abs Uni . Abs Uni . Abs Uni $ (App fConstant cConst Uni), newCtx)
-  (App fConstant cConst Uni, newCtx)
+  -- (App fConstant cConst Uni, newCtx)

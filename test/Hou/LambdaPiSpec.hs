@@ -13,6 +13,7 @@ import           Hou.LambdaPi
 
 import           Test.Hspec
 import qualified Data.FMList as FML
+import           Data.List
 
 import qualified Debug.Trace
 
@@ -46,6 +47,7 @@ spec = do
 
       result `shouldContain` [expected]
       Debug.Trace.traceM $ "bla bla: " ++ (show $ head result)
+      Debug.Trace.traceM $ show (expected `elemIndex` result)
       -- result `shouldNotBe` []
 
   describe "force a subterm to have a dependent type" $ do
@@ -73,15 +75,15 @@ spec = do
         result `shouldContain` [tType]
         Debug.Trace.traceM $ "bla bla 2: " ++ (show $ head result)
 
-  -- describe "solve a small instance of the Post Correspondence Problem" $ do
-  --   it "should find some solution" $ do
-  --     -- let pcpInstance = [([a], [b, a, a]), ([a, b], [a, a]), ([b, b, a], [b, b])]
-  --     let pcpInstance = [([a], [a])]
-  --     let (inferenceInstance, ctx) = createInstance createMapContext pcpInstance
+  describe "solve a small instance of the Post Correspondence Problem" $ do
+    it "should find some solution" $ do
+      -- let pcpInstance = [([a], [b, a, a]), ([a, b], [a, a]), ([b, b, a], [b, b])]
+      let pcpInstance = [([a], [a])]
+      let (inferenceInstance, ctx) = createInstance createMapContext pcpInstance
 
-  --     let result = solvePiTerm ctx inferenceInstance
+      let result = solvePiTerm ctx inferenceInstance
 
-  --     result `shouldNotBe` []
+      result `shouldNotBe` []
 
 tType :: TermType
 tType = Constant ("T", starType)

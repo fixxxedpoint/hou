@@ -139,7 +139,7 @@ instance Solution ListSolution where
   apply s (FreeVar (name, fType)) = FreeVar (name, apply s fType)
   apply s Uni = Uni
   apply s@(LS [(mv1@(mv1Name, _), term)]) t@(MetaVar mv2@(mv2Name, tType)) | mv1Name == mv2Name = trace "5.1" term
-                                                                           | otherwise = trace "5.2" t
+                                                                           | otherwise = trace "5.2" $ MetaVar (mv2Name, apply s tType)
   apply (LS (s:rest)) t = trace "6" $ apply (LS [s]) $ apply (LS rest) t
 
 {-|
@@ -176,7 +176,7 @@ preunify' :: (Solution s, L.NonDet n)
           -> GenT MetaVariableName (L.NonDeterministicT r n) s
 preunify' [] solution = trace "preunify []" $ return solution
 preunify' equations solution = L.interrupt $ callCC $ \exit -> do
-  Debug.Trace.traceM $ "preunify': " ++ show equations
+  -- Debug.Trace.traceM $ "preunify': " ++ show equations
   normalized <- sequence $ (\(a, b) -> (,) <$> a <*> b) . (normalize *** normalize) <$> equations
   -- traceM $ "are closed: " ++ show (and $ isClosed <$> [eq | (a, b) <- normalized, eq <- [a, b]])
   simplified <- fixPointOfSimplify normalized
@@ -233,7 +233,7 @@ unify' :: (Solution s, L.NonDet n)
 unify' equations solution = L.interrupt $ callCC $ \exit -> do
   normalized <- sequence $ (\(a, b) -> (,) <$> a <*> b) . (normalize *** normalize) <$> equations
   simplified <- fixPointOfSimplify normalized
-  Debug.Trace.traceM $ "unify' equations: " ++ show simplified
+  -- Debug.Trace.traceM $ "unify' equations: " ++ show simplified
   traceM ("unify' 3: " ++ show (isSolved simplified))
   when (null simplified) $ exit solution
   -- (mv, term) <- generateStep =<< L.anyOf simplified
@@ -260,8 +260,10 @@ getTypeEquations' :: [Equation] -> Term -> Term -> [Equation]
 getTypeEquations' r t1 t2
   | t1 == t2 = r
   | (Abs a1 b1) <- t1,
-    (Abs a2 b2) <- t2 = getTypeEquations' ((a1, a2) : r) b1 b2
-  | t2 == starType = getTypeEquations' r t2 t1
+    (Abs a2 b2) <- t2 =
+      getTypeEquations' ((a1, a2) : r) b1 b2
+  | t2 == starType =
+      getTypeEquations' r t2 t1
   | t1 == starType,
     isStarType t2 = r
   | otherwise = (t1, t2) : r
@@ -308,47 +310,21 @@ simplify :: (L.NonDet m, MonadPlus m, MonadGen MetaVariableName m) => Equation -
 simplify (t1, t2)
   | t1 == t2 = do
       return []
-  -- | (Abs type1 a) <- t1,
-  --   (Abs type2 b) <- t2,
-  --   type1 == type2 = do
-  --     newVar <- gen
-  --     let newCons = FreeVar (newVar, type1)
-  --     let newA = substitute newCons 0 a
-  --     let newB = substitute newCons 0 b
-  --     traceM $ "I am here 2" ++ show type1 ++ "---" ++ show type2
-  --     simplify (newA, newB)
-  -- | (Abs type1 a) <- t1,
-  --   (Abs type2 b) <- t2 = do
-  --     newVar <- gen
-  --     -- let newCons = FreeVar (newVar, type1)
-  --     let newCons = MetaVar (newVar, type1)
-  --     let newA = substitute newCons 0 a
-  --     let newB = substitute newCons 0 b
-  --     Debug.Trace.traceM $ "I am here 2" ++ show type1 ++ "---" ++ show type2
-  --     simplified <- simplify (newA, newB)
-  --     return $ (type1, type2) : simplified
   | (Abs type1 a) <- t1,
     (Abs type2 b) <- t2 = do
       simplified <- simplify (a, b)
       return $ (type1, type2) : simplified
   | (c1, ctx1) <- getHead t1,
     (c2, ctx2) <- getHead t2,
-    isFreeVarOrConstant c1,
-    isFreeVarOrConstant c2,
-    -- sameNumberOfLambdas t1 t2,
+    isRigid c1, isRigid c2,
     sameName c1 c2 = do
       argsEqs <- fold <$> mapM simplify (zip ctx1 ctx2) -- faster than using fixPointOfSimplify
       return $ (getTermType c1, getTermType c2) : argsEqs
-  -- | (c1, ctx1) <- getHead t1,
-  --   (c2, ctx2) <- getHead t2,
-  --   isFreeVarOrConstant c1 && isFreeVarOrConstant c2,
-  --   c1 == c2 = do
-  --     argEqs <- fold <$> mapM simplify (zip ctx1 ctx2) -- faster than using fixPointOfSimplify
-  --     return $ argEqs ++ [(t1, t2)]
   | isRigid t1 && isFlexible t2 = trace "rigid-flex" $ return [(t2, t1)]
   | isFlexible t1 && isRigid t2 = trace ("flex-rigid: " ++ show t1 ++ " --- " ++ show t2) $ return [(t1, t2)]
   | isFlexible t1 && isFlexible t2 = trace "flex-flex" $ return [(t1, t2)]
-  | otherwise = Debug.Trace.trace ("otherwise: " ++ show t1 ++ "---" ++ show t2) L.failure
+  | otherwise = trace ("otherwise: " ++ show t1 ++ "---" ++ show t2) L.failure
+  -- | otherwise = Debug.Trace.trace ("otherwise: " ++ show t1 ++ "---" ++ show t2) L.failure
   -- | otherwise = trace ("otherwise: " ++ show t1 ++ "---" ++ show t2) $ return [(t1, t2)]
 
 fixPointOfSimplify :: (L.NonDet m, MonadPlus m, MonadGen MetaVariableName m) => [Equation] -> m [Equation]
@@ -368,7 +344,7 @@ isRigid :: Term -> Bool
 isRigid = not . isFlexible
 
 isFlexible :: Term -> Bool
-isFlexible t | (MetaVar _, _) <- getHead t = trace "is flexible" True
+isFlexible t | (MetaVar _) <- fst . getHead $ t = trace "is flexible" True
              | otherwise = trace ("is not flexible" ++ show t) False
 
 isVarType :: TermType -> Bool
@@ -390,7 +366,12 @@ generateStep (flex, rigid) | isFlexible flex = do
   let headConstant = getHeadConstant rigid
   let headFreeVar  = getHeadFreeVar rigid
   let headMetaVar  = getHeadMetaVar rigid
-  let availableTerms = rigid :
+  -- TODO: try to also generate terms of the form new lambda (M assumptions :: *) . M' assumptions
+  -- NOTE: everything is in long normal form
+  let availableTerms = -- rigid :
+                       -- newTerm :
+                       -- (filter isClosed [rigid]) ++
+                       -- rigids ++
                        (Constant <$> maybeToList headConstant) ++
                        (FreeVar <$> maybeToList headFreeVar) ++
                        (filter (/= flexTerm) $ MetaVar <$> maybeToList headMetaVar)
@@ -399,7 +380,8 @@ generateStep (flex, rigid) | isFlexible flex = do
   traceM $ "before generate available terms: " ++ show availableTerms
   traceM $ "generateStep rigid: " ++ show rigid
   traceM  $ "generateStep flex: " ++ show flex
-  generatedTerm <- generate (getTermType flexTerm) availableTerms
+  let flexType = getTermType flexTerm
+  generatedTerm <- generate flexType availableTerms `L.choice` generateLambda flexType
   -- generatedTerm <- generate (getTermType rigid) availableTerms
   -- targetType <- L.anyOf [getTermType flexTerm, getTermType rigid]
   -- generatedTerm <- generate targetType availableTerms
@@ -407,16 +389,13 @@ generateStep (flex, rigid) | isFlexible flex = do
   return (flexVariable, generatedTerm)
 generateStep (t1, t2) = fail $ "first term of the equation is not flexible: " ++ show t1 ++ "---" ++ show t2
 
-changeGoal (Abs a b) goal = Abs a (changeGoal b goal)
-changeGoal _ goal         = goal
-
 generate :: (MonadPlus m, MonadGen MetaVariableName m, L.NonDet m)
          => TermType
          -> [Term]
          -> m Term
 generate varType availableTerms = do
   let (assumptions, goal) = getAssumptionsAndGoal varType
-  let matchingAssumptions = getMatchingTerms goal $ Var <$> assumptions
+  let matchingAssumptions = getMatchingTerms goal $ (Var <$> assumptions) ++ (getTermType . Var <$> assumptions)
   let matchingTerms = getMatchingTerms goal availableTerms
   traceM $ "matching var type: " ++ show varType
   traceM $ "available terms: " ++ show availableTerms
@@ -424,12 +403,34 @@ generate varType availableTerms = do
   traceM $ "Matching terms: " ++ show matchingTerms
   traceM ("generate: " ++ show matchingAssumptions)
   traceM $ "is empty :" ++ show (null (matchingTerms ++ matchingAssumptions))
-  -- head <- L.anyOf $ matchingAssumptions ++ matchingTerms
-  head <- L.anyOf $ matchingTerms ++ matchingAssumptions
+  head <- L.anyOf $ matchingAssumptions ++ matchingTerms
+  -- head <- L.anyOf $ matchingTerms ++ matchingAssumptions
   traceM $ "generate head: " ++ show head ++ " --- " ++ show matchingAssumptions ++ " --- " ++ show matchingTerms
   result <- generateLongTerm assumptions head
+  -- long <- generateLongTerm assumptions head
+  -- result <- L.anyOf $ [long, lambda]
   traceM ("generate result: " ++ show result)
   toLongNormalForm result
+
+-- \ x_1 ... x_n . x_new . M x_1 ... x_n x_new
+generateLambda :: (L.NonDet m, MonadGen MetaVariableName m) => TermType -> m Term
+generateLambda tType = do
+  let vars = fst . getAssumptionsAndGoal $ tType
+  argName <- gen
+  let absBuilder = Data.List.foldr (Abs . getTermType . Var)
+  let argType = absBuilder starType vars
+  let argVar = MetaVar (argName, argType)
+  let shiftType (Abs a b) = b
+  let appBuilder term = foldl (\a b -> App a b (shiftType . getTermType $ a)) term
+  let arg = appBuilder argVar $ Var <$> vars
+  -- bodyName <- gen
+  -- let bodyVar = MetaVar (bodyName, argType)
+  -- let body = appBuilder bodyVar $ (raise 1 . Var) <$> vars
+  let body = starType
+  let newType = absBuilder (Abs arg body) vars
+  newMetaVarName <- gen
+  toLongNormalForm $ MetaVar (newMetaVarName, newType)
+  -- TODO let the toLongNormalForm handle proper creation, just focus on its type
 
 generateLongTerm :: (L.NonDet m, MonadGen MetaVariableName m) => [Variable] -> Term -> m Term
 generateLongTerm lambdas head = do
@@ -441,7 +442,8 @@ generateLongTerm lambdas head = do
 generateLongBody :: (L.NonDet m, MonadGen MetaVariableName m) => [Variable] -> Term -> m Term
 generateLongBody variables head = do
   result <- foldM newArgVar head $ getTermType . Var <$> trace ("assumptions: " ++ show assumptions) assumptions
-  L.anyOf [result, head]
+  -- L.anyOf [head, result]
+  return result
   where
     (assumptions, _) = getAssumptionsAndGoal . getTermType $ head
 
@@ -626,8 +628,17 @@ isClosed' max t = case t of
   MetaVar (_, mvType) -> isClosed' max mvType
   Constant (_, consType) -> isClosed' max consType
   Var (name, varType) -> (name < max) && isClosed' max varType
-  FreeVar (_, fvType) -> isClosed' max fvType
+  -- FreeVar (_, fvType) -> isClosed' max fvType
+  FreeVar (name, fvType) -> False -- isClosed' max fvType
   App t1 t2 appType -> isClosed' max t1 && isClosed' max t2 && isClosed' max appType
   Abs absType body -> isClosed' max absType && isClosed' (max+1) body
   Uni -> True
+-- isClosed' max t = case t of
+--   MetaVar (_, mvType) -> True
+--   Constant (_, consType) -> True
+--   Var (name, varType) -> True -- (name < max)
+--   FreeVar (name, fvType) -> name < 0
+--   App t1 t2 appType -> isClosed' max t1 && isClosed' max t2
+--   Abs absType body -> isClosed' (max+1) body
+--   Uni -> True
 
