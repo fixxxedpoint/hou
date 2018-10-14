@@ -29,6 +29,7 @@ import           Hou.Trace
 
 import           Control.Arrow
 import           Control.Monad
+import           Control.Monad.Cont
 import           Control.Monad.Gen
 import qualified Data.FMList                as FML
 import           Data.Functor.Identity
@@ -57,12 +58,12 @@ toPrenexNormalForm form =
   where
     collect :: HouFormula -> [Quantifier] -> [H.Equation] -> ([Quantifier], [H.Equation])
     collect formula q eq = case formula of
-      (Equation t1 t2) -> (q, (t1, t2) : eq)
-      (And f1 f2) ->
+      Equation t1 t2 -> (q, (t1, t2) : eq)
+      And f1 f2 ->
         let (q1, e2) = collect f1 q eq in
         collect f2 q1 e2
-      (Exists var f) -> collect f (QExists var : q) eq
-      (ForAll var f) -> collect f (QForAll var : q) eq
+      Exists var f -> collect f (QExists var : q) eq
+      ForAll var f -> collect f (QForAll var : q) eq
 
 -- TODO: for sake of simplicity consider to just use the fixed-point strategy
 raise :: (Solution s) => PrenexNormalForm -> s -> (RaisedNormalForm, s)
@@ -98,10 +99,10 @@ switchMetavarToVar = switchMetavarToVar' 0
 switchMetavarToVar':: DeBruijnIndex -> MetaVariable -> Term -> Term
 switchMetavarToVar' ix v@(varIndex, varType) term =
   case term of
-    (MetaVar (termIndex, _)) | termIndex == varIndex -> Var (ix, varType)
+    MetaVar (termIndex, _) | termIndex == varIndex -> Var (ix, varType)
                              | otherwise -> term
-    (App t1 t2 tType) -> App (switchMetavarToVar' ix v t1) (switchMetavarToVar' ix v t2) tType
-    (Abs tType t) -> Abs tType (switchMetavarToVar' (ix+1) v t)
+    App t1 t2 tType -> App (switchMetavarToVar' ix v t1) (switchMetavarToVar' ix v t2) tType
+    Abs tType t -> Abs tType (switchMetavarToVar' (ix+1) v t)
     _ -> term
 
 {-|
@@ -140,7 +141,7 @@ solve f s = FML.head . iterDepthDefault $ solveNonDeterministic f s
 Given an instance of the higher-order unification with mixed quantifiers it returns
 a non-deterministic computation that tries to solve a given formula.
 -}
-solveNonDeterministic :: (Solution s, NonDet n) => HouFormula -> s -> NonDeterministicT r n s
+solveNonDeterministic :: (Solution s, NonDet m, MonadPlus m, MonadCont m) => HouFormula -> s -> m s
 solveNonDeterministic f s = do
   let prenexNormalForm = toPrenexNormalForm f
   let (raised, s') = raise prenexNormalForm s

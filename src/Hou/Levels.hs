@@ -66,6 +66,10 @@ merge [] ys         = ys
 merge xs []         = xs
 merge (x:xs) (y:ys) = choice x y : merge xs ys
 
+instance (NonDet m, MonadPlus m) => NonDet (GenT e m) where
+  failure = mzero
+  choice = mplus
+
 class Computation c where
   yield :: a -> c a
 
@@ -140,7 +144,7 @@ levelIter step c =
   }
   where yieldB x =
           DepthBounded {
-            (!) = \d -> trace ("levelIter: " ++ show d) $ if d < step then trace "yielding" $ yield x else trace "levelIter" failure
+            (!) = \d -> if d < step then trace "yielding" $ yield x else trace "levelIter" failure
           }
 
 iterDepth :: (Computation m, NonDet m)
@@ -152,12 +156,12 @@ iterDepth step = runLevels . levelIter step
 iterDepthDefault :: (Computation m, NonDet m) => NonDeterministicT a (DepthBounded m) a -> m a
 iterDepthDefault = iterDepth 200
 
-interrupt :: (Alternative a) => a b -> a b
-interrupt v = v <|> Appl.empty
+interrupt :: (NonDet m) => m b -> m b
+interrupt v = v `choice` failure
 
-anyOf :: (Alternative m) => [a] -> m a
-anyOf []     = Appl.empty
-anyOf (x:xs) = pure x <|> anyOf xs
+anyOf :: (Monad m, NonDet m) => [a] -> m a
+anyOf []     = failure
+anyOf (x:xs) = pure x `choice` anyOf xs
 
 example :: NonDeterministicT r DiffList Int
 example = return 10 <|> return 11 <|> return 100

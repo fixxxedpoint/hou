@@ -1,4 +1,5 @@
 {-# LANGUAGE FlexibleContexts      #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
 
 {-|
 Module      : Hou.SystemF
@@ -21,6 +22,8 @@ import           Hou.Levels
 import           Hou.MixedPrefix            as M
 import           Hou.Trace
 
+import           Control.Monad
+import           Control.Monad.Cont
 import           Control.Monad.Gen
 import           Data.FMList                as FML
 import           Data.List
@@ -31,7 +34,7 @@ import           Data.Maybe
 type VarName = Int
 
 {-|
-Represents type a term of SystemF.
+Represents type of a term of SystemF.
 -}
 data FTermType =
   VarType VarName |
@@ -86,8 +89,8 @@ inferTypes' nterm = iterDepthDefault $ do
   solution <- inferFTerm term
   return solution
 
-inferFTerm :: (NonDet n) => FTerm -> NonDeterministicT r n FTermType
-inferFTerm t = trace ("inferFTerm: " ++ show t) $ do
+inferFTerm :: (NonDet m, MonadPlus m, MonadCont m) => FTerm -> m FTermType
+inferFTerm t = do
   let (fixedFormula, resultType) = prepareFormula t
   traceM $ "inferFTerm 1: " ++ show fixedFormula
   solution <- solveNonDeterministic fixedFormula H.createListSolution
@@ -129,22 +132,22 @@ the problem of higher-order unification.
 -}
 translate :: (MonadGen H.MetaVariableName m, Context c) => c -> FTerm -> H.Term -> m HouFormula
 translate ctx t tType = case t of
-  (Var name termType) ->
+  Var name termType ->
     case Hou.SystemF.lookup ctx name of
       Nothing -> fail "definition of a variable was not found in the context"
-      (Just ctxType) ->
+      Just ctxType ->
         case termType of
-          (Just termTypeVal) -> return $ And (Equation tType ctxType) (Equation tType $ toTermType termTypeVal)
+          Just termTypeVal -> return $ And (Equation tType ctxType) (Equation tType $ toTermType termTypeVal)
           _ -> return $ Equation tType ctxType
 
-  (App t1 t2) -> do
+  App t1 t2 -> do
     v <- newMetaVariable
     let vMetaVar = H.MetaVar v
     t1Form <- translate ctx t1 $ implication vMetaVar tType
     t2Form <- translate ctx t2 vMetaVar
     return $ Exists v $ And t1Form t2Form
 
-  (Abs name termType term) -> do
+  Abs name termType term -> do
     beta <- newMetaVariable
     let betaTerm = fromMaybe (H.MetaVar beta) $ toTermType <$> termType
     v <- newMetaVariable
@@ -154,7 +157,7 @@ translate ctx t tType = case t of
         (Equation tType (implication betaTerm vMetaVar)) <$>
         translate (add ctx name betaTerm) term vMetaVar
 
-  (TypeApp term termType) -> do
+  TypeApp term termType -> do
     beta <- newMetaVariable
     let betaTerm = fromMaybe (H.MetaVar beta) $ toTermType <$> termType
     vName <- gen
@@ -165,7 +168,7 @@ translate ctx t tType = case t of
         (Equation tType (H.App vMetaVar betaTerm H.starType)) <$>
         translate ctx term (forAll vMetaVar)
 
-  (TypeAbs name term) -> do
+  TypeAbs name term -> do
     newVar <- gen
     let v = (newVar, H.Implication H.starType H.starType)
     let vMetaVar = H.MetaVar v
@@ -193,10 +196,10 @@ injectQuantifiers' previous =
 injectQuantifier :: FTerm -> [FTerm]
 injectQuantifier t =
   let next = case t of
-        (App t1 t2) -> [ App t1' t2 | t1' <- injectQuantifier t1 ] ++ [ App t1 t2' | t2' <- injectQuantifier t2 ]
-        (TypeApp term tType) -> [TypeApp term' tType | term' <- injectQuantifier term]
-        (Abs name tType term) -> [Abs name tType term' | term' <- injectQuantifier term]
-        (TypeAbs tType term) -> [TypeAbs tType term' | term' <- injectQuantifier term]
+        App t1 t2 -> [ App t1' t2 | t1' <- injectQuantifier t1 ] ++ [ App t1 t2' | t2' <- injectQuantifier t2 ]
+        TypeApp term tType -> [TypeApp term' tType | term' <- injectQuantifier term]
+        Abs name tType term -> [Abs name tType term' | term' <- injectQuantifier term]
+        TypeAbs tType term -> [TypeAbs tType term' | term' <- injectQuantifier term]
         _ -> []
   in
   [TypeApp t Nothing, TypeAbs Nothing t] ++ next
@@ -209,21 +212,21 @@ toFTermType t = trace ("toFTermType: " ++ show t) $
 
 countFreeAndMetaVars :: H.Term -> Int
 countFreeAndMetaVars t = case t of
-  (H.MetaVar _)   -> 1
-  (H.FreeVar _)   -> 1
-  (H.App t1 t2 _) -> countFreeAndMetaVars t1 + countFreeAndMetaVars t2
-  (H.Abs _ term)  -> countFreeAndMetaVars term
-  _               -> 0
+  H.MetaVar _   -> 1
+  H.FreeVar _   -> 1
+  H.App t1 t2 _ -> countFreeAndMetaVars t1 + countFreeAndMetaVars t2
+  H.Abs _ term  -> countFreeAndMetaVars term
+  _             -> 0
 
 toFTermType' :: (MonadGen VarName m) => [VarName] -> H.Term -> m FTermType
 toFTermType' lambdas t = case t of
-  (H.MetaVar (ix, _)) -> return $ VarType ix
-  (H.Var (ix, _)) -> return $ VarType $ lambdas !! ix
-  (H.FreeVar (ix, _)) -> return $ VarType ix
-  (H.App (H.App (H.Constant ("->", _)) a _) b _) ->
+  H.MetaVar (ix, _) -> return $ VarType ix
+  H.Var (ix, _) -> return $ VarType $ lambdas !! ix
+  H.FreeVar (ix, _) -> return $ VarType ix
+  H.App (H.App (H.Constant ("->", _)) a _) b _ ->
     trace "toFTermType ->" $ Implication <$> toFTermType' lambdas a <*> toFTermType' lambdas b
-  (H.App (H.Constant ("∀", _)) term _) -> trace "toFTermType 'forall'" $ toFTermType' lambdas term
-  (H.Abs _ term) -> do
+  H.App (H.Constant ("∀", _)) term _ -> trace "toFTermType 'forall'" $ toFTermType' lambdas term
+  H.Abs _ term -> do
     newBoundVariable <- gen
     let lambdas' = newBoundVariable : lambdas
     Hou.SystemF.ForAll newBoundVariable <$> toFTermType' lambdas' term
@@ -237,8 +240,8 @@ toTermType t = trace ("toTermType: " ++ show t) $ toTermType' [] t
 
 toTermType' :: [VarName] -> FTermType -> H.Term
 toTermType' bounded t = trace ("toTermType' 1: " ++ show t) $ case t of
-  (VarType name) -> case elemIndex name bounded of
-    (Just ix) -> H.Var (ix, H.starType)
+  VarType name -> case elemIndex name bounded of
+    Just ix -> H.Var (ix, H.starType)
     Nothing -> trace ("toTermType': " ++ show name) $ H.FreeVar (name, H.starType)
-  (Implication t1 t2) -> implication (toTermType' bounded t1) (toTermType' bounded t2)
-  (Hou.SystemF.ForAll name term) -> forAll $ H.Abs H.starType $ toTermType' (name:bounded) term
+  Implication t1 t2 -> implication (toTermType' bounded t1) (toTermType' bounded t2)
+  Hou.SystemF.ForAll name term -> forAll $ H.Abs H.starType $ toTermType' (name:bounded) term
