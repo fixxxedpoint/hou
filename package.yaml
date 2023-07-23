@@ -1,6 +1,6 @@
 name:                hou
 version:             0.1.0.0
-github:              "https://github.com/fixxxedpoint/hou"
+github:              fixxxedpoint/hou
 license:             MIT
 license-file:        LICENSE
 author:              Łukasz Lachowski <l.lachowski@gmail.com>
