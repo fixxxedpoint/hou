@@ -129,20 +129,20 @@ Preunification algorithm tries to solve a given list of equations, returning a s
 the remaining equations are of the flex-flex form. It returns a non-deterministic computation
 producing a list of possible solutions.
 -}
-preunifyNonDeterministic :: (Solution s, NonDet m, MonadPlus m, MonadCont m)
+preunifyNonDeterministic :: (Solution s, NonDet m, MonadPlus m, MonadCont m, MonadFail m)
                          => [Equation] -> s -> m s
 preunifyNonDeterministic eqs s =
   let nextEnum = toEnum . (1 +) . getMaxMetaVar $ eqs in
   trace "preunifyNonD..." $ runGenTFrom nextEnum $ preunify eqs s
 
-preunify :: (Solution s, NonDet m, Appl.Alternative m, MonadGen MetaVariableName m, MonadCont m)
+preunify :: (Solution s, NonDet m, Appl.Alternative m, MonadGen MetaVariableName m, MonadCont m, MonadFail m)
          => [Equation]
          -> s
          -> m s
 preunify eqs s = let lnf = (toLongNormalForm *** toLongNormalForm) <$> eqs in
   preunify' lnf s
 
-preunify' :: (Solution s, NonDet m, Appl.Alternative m, MonadGen MetaVariableName m, MonadCont m)
+preunify' :: (Solution s, NonDet m, Appl.Alternative m, MonadGen MetaVariableName m, MonadCont m, MonadFail m)
           => [Equation]
           -> s
           -> m s
@@ -181,7 +181,7 @@ unifyNonDeterministic eqs s =
   let nextEnum = toEnum . (1 +) . getMaxMetaVar $ eqs in
   trace "preunifyF..." $ runGenTFrom nextEnum $ unify eqs s
 
-unify :: (Solution s, NonDet m, Appl.Alternative m, MonadGen MetaVariableName m, MonadCont m)
+unify :: (Solution s, NonDet m, Appl.Alternative m, MonadGen MetaVariableName m, MonadCont m, MonadFail m)
       => [Equation]
       -> s
       -> m s
@@ -191,7 +191,7 @@ unify eqs s = do
   traceM "already preunified"
   unify' ((apply presolution *** apply presolution) <$> lnf) presolution
 
-unify' :: (Solution s, NonDet m, Appl.Alternative m, MonadGen MetaVariableName m, MonadCont m)
+unify' :: (Solution s, NonDet m, Appl.Alternative m, MonadGen MetaVariableName m, MonadCont m, MonadFail m)
        => [Equation]
        -> s
        -> m s
@@ -280,7 +280,7 @@ isVarType _           = False
 {-|
 Tries to non-deterministically solve an equation using projection or imitation.
 -}
-generateStep :: (MonadGen MetaVariableName m, NonDet m, Appl.Alternative m)
+generateStep :: (MonadGen MetaVariableName m, NonDet m, Appl.Alternative m, MonadFail m)
              => Equation
              -> m (MetaVariable, Term)
 generateStep (flex, rigid) | isFlexible flex = do
