@@ -29,6 +29,8 @@ import           Data.FMList                as FML
 import           Data.List
 import           Data.Map
 import           Data.Maybe
+import Control.Monad.Except (MonadError (throwError, catchError), runExceptT, liftEither)
+import Control.Arrow (ArrowChoice(left))
 
 
 type VarName = Int
@@ -71,27 +73,31 @@ instance Context MapContext where
   lookup (MC c) = flip Data.Map.lookup c
   add (MC c) name term = MC $ Data.Map.insert name term c
 
+data TranslateException = VariableNotInContext deriving (Show)
+
+newtype TypeCheckingException = TranslationException TranslateException deriving (Show)
+
 {-|
 Function returning first valid type found for a given term.
 -}
-inferType :: FTerm -> FTermType
+inferType :: FTerm -> Either TypeCheckingException FTermType
 inferType = Data.List.head . inferTypes
 
 {-|
 If a given term is typable, it returns an infinite list of possible typings for it.
 -}
-inferTypes :: FTerm -> [FTermType]
+inferTypes :: FTerm -> [Either TypeCheckingException FTermType]
 inferTypes = FML.toList . inferTypes'
 
-inferTypes' :: FTerm -> FML.FMList FTermType
-inferTypes' nterm = iterDepthDefault $ do
-  term <- anyOf $ termToFTerms nterm
-  solution <- inferFTerm term
-  return solution
+inferTypes' :: FTerm -> FML.FMList (Either TypeCheckingException FTermType)
+inferTypes' nterm = iterDepthDefault $ runExceptT $ do
+  term <- lift $ anyOf $ termToFTerms nterm
+  case prepareFormula term of
+    Left exception -> throwError $ TranslationException exception
+    Right (fixedFormula, resultType) -> lift $ inferFTerm fixedFormula resultType
 
-inferFTerm :: (NonDet m, MonadPlus m, MonadCont m) => FTerm -> m FTermType
-inferFTerm t = do
-  let (fixedFormula, resultType) = prepareFormula t
+inferFTerm :: (NonDet m, MonadPlus m, MonadCont m) => HouFormula -> H.Term -> m FTermType
+inferFTerm fixedFormula resultType = do
   traceM $ "inferFTerm 1: " ++ show fixedFormula
   solution <- solveNonDeterministic fixedFormula H.createListSolution
   traceM $ "inferFTerm 2: " ++ show resultType
@@ -102,9 +108,9 @@ inferFTerm t = do
 Maps a typing problem of a term of SystemF onto a formula of higher-order unification.
 -}
 prepareFormula :: FTerm   -- ^ A term with possible type annotations.
-  -> (HouFormula, H.Term) -- ^ Typing of the term encoded as a formula of higher-order unification
+  -> Either TranslateException (HouFormula, H.Term) -- ^ Typing of the term encoded as a formula of higher-order unification
                           --   and a term that represents its type.
-prepareFormula t = runGen $ do
+prepareFormula t = runGen $ runExceptT $ do
   termType <- newMetaVariable
   let resultType = H.MetaVar termType
   let ctx = createMapContext
@@ -130,11 +136,11 @@ forAll t | H.getTermType t == H.Implication H.starType H.starType = H.App (H.Con
 Main function of this module. It translates a problem of typing of a term of SystemF  onto
 the problem of higher-order unification.
 -}
-translate :: (MonadGen H.MetaVariableName m, Context c) => c -> FTerm -> H.Term -> m HouFormula
+translate :: (MonadGen H.MetaVariableName m, Context c, MonadError TranslateException m) => c -> FTerm -> H.Term -> m HouFormula
 translate ctx t tType = case t of
   Var name termType ->
     case Hou.SystemF.lookup ctx name of
-      Nothing -> fail "definition of a variable was not found in the context"
+      Nothing -> throwError VariableNotInContext
       Just ctxType ->
         case termType of
           Just termTypeVal -> return $ And (Equation tType ctxType) (Equation tType $ toTermType termTypeVal)
@@ -149,7 +155,7 @@ translate ctx t tType = case t of
 
   Abs name termType term -> do
     beta <- newMetaVariable
-    let betaTerm = fromMaybe (H.MetaVar beta) $ toTermType <$> termType
+    let betaTerm = maybe (H.MetaVar beta) toTermType termType
     v <- newMetaVariable
     let vMetaVar = H.MetaVar v
     Exists beta . Exists v .
@@ -159,7 +165,7 @@ translate ctx t tType = case t of
 
   TypeApp term termType -> do
     beta <- newMetaVariable
-    let betaTerm = fromMaybe (H.MetaVar beta) $ toTermType <$> termType
+    let betaTerm = maybe (H.MetaVar beta) toTermType termType
     vName <- gen
     let v = (vName, H.Implication H.starType H.starType)
     let vMetaVar = H.MetaVar v
@@ -172,7 +178,7 @@ translate ctx t tType = case t of
     newVar <- gen
     let v = (newVar, H.Implication H.starType H.starType)
     let vMetaVar = H.MetaVar v
-    phi <- fromMaybe newMetaVariable $ (\n -> return (n, H.starType)) <$> name
+    phi <- maybe newMetaVariable (\n -> return (n, H.starType)) name
     Exists v .
       And (Equation tType (forAll vMetaVar)) .
       M.ForAll phi <$> translate ctx term (H.App vMetaVar (H.MetaVar phi) H.starType)
@@ -230,7 +236,6 @@ toFTermType' lambdas t = case t of
     newBoundVariable <- gen
     let lambdas' = newBoundVariable : lambdas
     Hou.SystemF.ForAll newBoundVariable <$> toFTermType' lambdas' term
-  _ -> fail $ "I don't know what happend. Processed term: "  ++ show t
 
 {-|
 Translates a type of SystemF onto a simply typed lambda term.

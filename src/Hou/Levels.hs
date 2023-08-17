@@ -35,7 +35,7 @@ newtype Levels n a = Levels { levels :: [n a] }
 newtype DepthBounded n a = DepthBounded { (!) :: Integer -> n a }
 
 newtype NonDeterministicT r (m :: * -> *) a = NDT { (!!>) :: ContT r m a }
-  deriving (Functor, Applicative, Monad, MonadCont, MonadTrans, MonadFail)
+  deriving (Functor, Applicative, Monad, MonadCont, MonadTrans)
 
 instance (NonDet n) => NonDet (DepthBounded n) where
   failure = DepthBounded . const $ failure
@@ -82,22 +82,22 @@ instance (Computation n) => Computation (Levels n) where
 instance Computation FML.FMList where
   yield = FML.singleton
 
-instance Semigroup (DiffList a) where
-  (<>) = (<|>)
+instance Semigroup ( DiffList a ) where
+  (<>) = (+++)
 
 instance Monoid (DiffList a) where
   mempty = Appl.empty
-  mappend = (<|>)
+  mappend = (<>)
 
 instance Functor DiffList where
   fmap = liftM
 
 instance Applicative DiffList where
-  pure = return
+  pure = singleton
   (<*>) = ap
 
 instance Monad DiffList where
-  return = singleton
+  return = pure
   m >>= f = mconcat $ f <$> toList m
 
 instance Alternative DiffList where
@@ -163,8 +163,7 @@ interrupt :: (NonDet m) => m b -> m b
 interrupt v = v `choice` failure
 
 anyOf :: (Monad m, NonDet m) => [a] -> m a
-anyOf []     = failure
-anyOf (x:xs) = pure x `choice` anyOf xs
+anyOf = foldr (choice . pure) failure
 
 example :: NonDeterministicT r DiffList Int
 example = return 10 <|> return 11 <|> return 100
