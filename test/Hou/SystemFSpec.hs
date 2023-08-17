@@ -8,6 +8,7 @@ module Hou.SystemFSpec where
 import           Hou.SystemF
 
 import           Test.Hspec
+import Data.Either (rights)
 
 
 spec :: Spec
@@ -17,7 +18,7 @@ spec = do
       let term = Abs "x" (Just $ VarType 0) $ Var "x" Nothing
       let termsType = Implication (VarType 0) (VarType 0)
 
-      let result = head . filter ((==) (toTermType termsType)) $ toTermType <$> inferTypes term
+      let result = head . filter (toTermType termsType ==) $ toTermType <$> (rights . inferTypes $ term)
 
       result `shouldBe` toTermType termsType
 
@@ -26,7 +27,7 @@ spec = do
       let term = TypeAbs Nothing $ Abs "x" Nothing $ Var "x" Nothing
       let termsType = ForAll 0 (Implication (VarType 0) (VarType 0))
 
-      let result = head . filter ((==) (toTermType termsType)) $ toTermType <$> inferTypes term
+      let result = head . filter (toTermType termsType ==) $ toTermType <$> (rights . inferTypes $ term )
 
       result `shouldBe` toTermType termsType
 
@@ -35,7 +36,7 @@ spec = do
       let term = Abs "x" (Just $ ForAll 0 (Implication (VarType 0) (VarType 0))) $ App (TypeApp (Var "x" Nothing) Nothing) (Var "x" Nothing)
       let termsType = Implication (ForAll 0 (Implication (VarType 0) (VarType 0))) (ForAll 0 (Implication (VarType 0) (VarType 0)))
 
-      let result = head . filter ((==) (toTermType termsType)) $ toTermType <$> inferTypes term
+      let result = head . filter (toTermType termsType ==) $ toTermType <$> (rights . inferTypes $ term)
 
       result `shouldBe` toTermType termsType
 
@@ -52,7 +53,7 @@ spec = do
       let term = App (Abs "x" Nothing (App (TypeApp (Var "x" Nothing) Nothing) (Var "x" Nothing))) (TypeAbs Nothing (Abs "y" Nothing (Var "y" Nothing)))
       let termsType = ForAll 0 (Implication (VarType 0) (VarType 0))
 
-      let result = head . filter ((==) (toTermType termsType)) $ toTermType <$> inferTypes term
+      let result = head . filter (toTermType termsType ==) $ toTermType <$> (rights . inferTypes $ term)
 
       result `shouldBe` toTermType termsType
 
@@ -61,7 +62,7 @@ spec = do
       let term = App (Abs "x" Nothing (App (Var "x" Nothing) (Var "x" Nothing))) (Abs "y" Nothing (Var "y" Nothing))
       let termsType = ForAll 0 (Implication (VarType 0) (VarType 0))
 
-      let result = head . filter ((==) (toTermType termsType)) $ toTermType <$> inferTypes term
+      let result = head . filter (toTermType termsType ==) $ toTermType <$> (rights . inferTypes $ term)
 
       result `shouldBe` toTermType termsType
 
