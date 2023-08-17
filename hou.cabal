@@ -9,9 +9,9 @@ version:        0.1.0.0
 description:    Please see the README.md.
 homepage:       https://github.com/fixxxedpoint/hou#readme
 bug-reports:    https://github.com/fixxxedpoint/hou/issues
-author:         Łukasz Lachowski <l.lachowski@gmail.com>
-maintainer:     Łukasz Lachowski <l.lachowski@gmail.com>
-copyright:      2018 Łukasz Lachowski <l.lachowski@gmail.com>
+author:         Lukas Lachowski <l.lachowski@gmail.com>
+maintainer:     Lukas Lachowski <l.lachowski@gmail.com>
+copyright:      2018 Lukas Lachowski <l.lachowski@gmail.com>
 license:        MIT
 license-file:   LICENSE
 build-type:     Simple
