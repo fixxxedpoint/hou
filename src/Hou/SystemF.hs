@@ -31,6 +31,7 @@ import           Data.Map
 import           Data.Maybe
 import Control.Monad.Except (MonadError (throwError, catchError), runExceptT, liftEither)
 import Control.Arrow (ArrowChoice(left))
+import Data.Either (rights)
 
 
 type VarName = Int
@@ -75,13 +76,13 @@ instance Context MapContext where
 
 data TranslateException = VariableNotInContext deriving (Show)
 
-newtype TypeCheckingException = TranslationException TranslateException deriving (Show)
+data TypeCheckingException = TranslationException TranslateException | SomeTypeCheckingError deriving (Show)
 
 {-|
 Function returning first valid type found for a given term.
 -}
 inferType :: FTerm -> Either TypeCheckingException FTermType
-inferType = Data.List.head . inferTypes
+inferType = maybe (Left SomeTypeCheckingError) Right . listToMaybe . rights . inferTypes
 
 {-|
 If a given term is typable, it returns an infinite list of possible typings for it.
