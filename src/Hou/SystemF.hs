@@ -30,8 +30,9 @@ import           Data.List
 import           Data.Map
 import           Data.Maybe
 import Control.Monad.Except (MonadError (throwError, catchError), runExceptT, liftEither)
-import Control.Arrow (ArrowChoice(left))
+import Control.Arrow (ArrowChoice(left), Arrow (arr))
 import Data.Either (rights)
+import Data.Bifunctor (first)
 
 
 type VarName = Int
@@ -74,15 +75,15 @@ instance Context MapContext where
   lookup (MC c) = flip Data.Map.lookup c
   add (MC c) name term = MC $ Data.Map.insert name term c
 
-data TranslateException = VariableNotInContext deriving (Show)
+data TranslateException = VariableNotInContext deriving (Eq, Show)
 
-data TypeCheckingException = TranslationException TranslateException | SomeTypeCheckingError deriving (Show)
+data TypeCheckingException = TranslationException TranslateException | TypeCheckingTotalFailure deriving (Eq, Show)
 
 {-|
 Function returning first valid type found for a given term.
 -}
 inferType :: FTerm -> Either TypeCheckingException FTermType
-inferType = maybe (Left SomeTypeCheckingError) Right . listToMaybe . rights . inferTypes
+inferType = maybe (Left TypeCheckingTotalFailure) Right . listToMaybe . rights . inferTypes
 
 {-|
 If a given term is typable, it returns an infinite list of possible typings for it.
@@ -93,9 +94,8 @@ inferTypes = FML.toList . inferTypes'
 inferTypes' :: FTerm -> FML.FMList (Either TypeCheckingException FTermType)
 inferTypes' nterm = iterDepthDefault $ runExceptT $ do
   term <- lift $ anyOf $ termToFTerms nterm
-  case prepareFormula term of
-    Left exception -> throwError $ TranslationException exception
-    Right (fixedFormula, resultType) -> lift $ inferFTerm fixedFormula resultType
+  (fixedFormula, resultType) <- liftEither $ first TranslationException . prepareFormula $ term
+  lift $ inferFTerm fixedFormula resultType
 
 inferFTerm :: (NonDet m, MonadPlus m, MonadCont m) => HouFormula -> H.Term -> m FTermType
 inferFTerm fixedFormula resultType = do
