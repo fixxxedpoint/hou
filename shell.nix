@@ -1,18 +1,11 @@
-with (import <nixpkgs> {});
+with (import <nixpkgs> { });
 
-let
-  project = import ./default.nix;
-  nativeBuildInputs = project.nativeBuildInputs ++ [
-    haskellPackages.apply-refact
-    haskellPackages.hlint
-    haskellPackages.stylish-haskell
-    haskellPackages.hasktags
-    haskellPackages.hoogle
-    haskellPackages.haskell-language-server
+haskell.lib.buildStackProject {
+  nativeBuildInputs = [
+    perl
+    gcc
   ];
-in
-mkShell {
-  inherit nativeBuildInputs;
-  inherit (project) buildInputs;
-}
 
+  name = "hou";
+  src = ./.;
+}
